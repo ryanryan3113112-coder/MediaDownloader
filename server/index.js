@@ -506,22 +506,43 @@ app.get('/api/debug/ytdlp', async (req, res) => {
       newVer = stdout.trim();
     } catch (_) {}
 
-    // 測試解析
+    // 檢查 node 路徑
+    let whichNode = 'unknown';
     try {
-      const { stdout } = await execAsync('yt-dlp --dump-json --no-playlist --skip-download --extractor-args "youtube:player_client=android_vr,ios,mweb,android" --socket-timeout 20 "https://www.youtube.com/watch?v=uLU6GE88vvU"');
-      const j = JSON.parse(stdout);
-      testParse = `SUCCESS: ${j.title} (${j.formats?.length || 0} formats, max: ${j.height}p)`;
+      const { stdout } = await execAsync('which node || where node');
+      whichNode = stdout.trim();
     } catch (e) {
-      testParse = `FAIL: ${e.stderr || e.stdout || e.message}`;
+      whichNode = e.message;
+    }
+
+    const cookiesArgs = getCookiesArgs();
+
+    // 測試解析（含 verbose）
+    let verboseLog = '';
+    try {
+      const { stdout, stderr } = await execAsync(`yt-dlp --verbose --dump-json --no-playlist --skip-download ${cookiesArgs.join(' ')} --socket-timeout 25 "https://www.youtube.com/watch?v=uLU6GE88vvU"`);
+      try {
+        const j = JSON.parse(stdout);
+        testParse = `SUCCESS: ${j.title} (${j.formats?.length || 0} formats, max: ${j.height}p)`;
+      } catch (_) {
+        testParse = `PARTIAL: ${stdout.slice(0, 200)}`;
+      }
+      verboseLog = stderr;
+    } catch (e) {
+      testParse = `FAIL: ${e.message}`;
+      verboseLog = e.stderr || e.stdout || '';
     }
 
     res.json({
       success: true,
       path: whichYt,
+      whichNode,
       initialVersion: ytVer,
       newVersion: newVer,
+      cookiesArgs,
       updateLog,
-      testParse
+      testParse,
+      verboseLog
     });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
