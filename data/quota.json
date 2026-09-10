@@ -26,5 +26,12 @@
     "downloadsCount": 1,
     "lastDownloadAt": "2026-09-10T11:37:00.210Z",
     "lastDownloadedTitle": "【阿哲】iPhone Duo、18 Pro懶人包 - 這個東西是真的燒到我了🥵 (iPhone Duo, 18 Pro, AirPods 5, Watch S12, Ultra 4) [#572]"
+  },
+  "test_quota_user_1789042946783": {
+    "identifier": "test_quota_user_1789042946783",
+    "date": "2026-09-10",
+    "downloadsCount": 1,
+    "lastDownloadAt": "2026-09-10T12:22:26.856Z",
+    "lastDownloadedTitle": "QuotaTest"
   }
 }

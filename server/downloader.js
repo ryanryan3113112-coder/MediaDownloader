@@ -77,6 +77,7 @@ class DownloaderService {
 
     let info = null;
     try {
+      // 策略 1：使用行動端與電視端客戶端（完全排除 datacenter 會被封鎖的 web / default 客戶端）
       info = await runParse([
         '--dump-json',
         '--no-playlist',
@@ -84,18 +85,23 @@ class DownloaderService {
         '--no-warnings',
         '--no-check-certificates',
         '--geo-bypass',
-        '--extractor-args', 'youtube:player_client=android_vr,android,ios,web,default',
+        '--extractor-args', 'youtube:player_client=android,mweb,tv,ios',
         '--socket-timeout', '30',
         cleanUrl
       ]);
     } catch (primaryErr) {
-      console.warn('[Downloader] 優先客戶端解析異常，切換至相容回退模式:', primaryErr.message);
+      console.warn('[Downloader] 策略 1 解析異常，嘗試策略 2 (內嵌與行動網頁客戶端)...', primaryErr.message);
       try {
+        // 策略 2：使用 web_embedded, tv_embedded, mweb 內嵌播放器避開 IP 封鎖
         info = await runParse([
           '--dump-json',
           '--no-playlist',
           '--skip-download',
           '--no-warnings',
+          '--no-check-certificates',
+          '--geo-bypass',
+          '--extractor-args', 'youtube:player_client=web_embedded,tv_embedded,mweb',
+          '--socket-timeout', '30',
           cleanUrl
         ]);
       } catch (fallbackErr) {
@@ -166,7 +172,7 @@ class DownloaderService {
       '--no-warnings',
       '--no-check-certificates',
       '--geo-bypass',
-      '--extractor-args', 'youtube:player_client=android_vr,android,ios,web,default',
+      '--extractor-args', 'youtube:player_client=android,mweb,tv,ios',
       '--socket-timeout', '30',
       '--concurrent-fragments', '4',
       '-o', outputTemplate
