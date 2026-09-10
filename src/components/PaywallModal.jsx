@@ -144,6 +144,27 @@ export default function PaywallModal({
                   <span>{redeemError}</span>
                 </div>
               )}
+
+              {/* 快速填入測試/體驗金鑰 */}
+              <div className="flex flex-wrap items-center gap-1.5 pt-1 text-[11px]">
+                <span className="text-gray-400">可用金鑰：</span>
+                <button
+                  type="button"
+                  onClick={() => setRedeemKey('0815065')}
+                  className="px-2 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 font-mono transition"
+                  title="點擊帶入總控派發管理員金鑰"
+                >
+                  ⚡ 0815065 (總控管理)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRedeemKey('RPJG-VIP-LIFETIME')}
+                  className="px-2 py-0.5 rounded bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/30 font-mono transition"
+                  title="點擊帶入 RPJG 永久 VIP 體驗卡"
+                >
+                  👑 RPJG-VIP-LIFETIME
+                </button>
+              </div>
             </form>
           </div>
         </div>

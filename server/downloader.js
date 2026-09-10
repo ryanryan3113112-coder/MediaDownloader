@@ -65,21 +65,46 @@ class DownloaderService {
       throw new Error('請提供有效的音訊或影片網址');
     }
 
+    const cleanUrl = url.trim();
+    // 優先策略：採用 Android VR / Android / iOS / Web 多重客戶端，徹底繞過資料中心 IP 攔截
+    const runParse = async (args) => {
+      const { stdout } = await execFileAsync('yt-dlp', args, {
+        timeout: 45000,
+        maxBuffer: 25 * 1024 * 1024
+      });
+      return JSON.parse(stdout);
+    };
+
+    let info = null;
     try {
-      // 呼叫 yt-dlp --dump-json --no-playlist
-      const { stdout } = await execFileAsync('yt-dlp', [
+      info = await runParse([
         '--dump-json',
         '--no-playlist',
         '--skip-download',
         '--no-warnings',
-        url.trim()
-      ], {
-        timeout: 45000,
-        maxBuffer: 20 * 1024 * 1024
-      });
+        '--no-check-certificates',
+        '--geo-bypass',
+        '--extractor-args', 'youtube:player_client=android_vr,android,ios,web,default',
+        '--socket-timeout', '30',
+        cleanUrl
+      ]);
+    } catch (primaryErr) {
+      console.warn('[Downloader] 優先客戶端解析異常，切換至相容回退模式:', primaryErr.message);
+      try {
+        info = await runParse([
+          '--dump-json',
+          '--no-playlist',
+          '--skip-download',
+          '--no-warnings',
+          cleanUrl
+        ]);
+      } catch (fallbackErr) {
+        console.error('[Downloader] parseInfo 雙重嘗試均失敗:', fallbackErr.message);
+        throw new Error(`無法解析此網址：${fallbackErr.stderr || primaryErr.stderr || fallbackErr.message || '請確認連結有效且影片公開'}`);
+      }
+    }
 
-      const info = JSON.parse(stdout);
-
+    try {
       // 提取可用視訊高度
       const heights = new Set();
       if (Array.isArray(info.formats)) {
@@ -100,13 +125,13 @@ class DownloaderService {
         durationFormatted: formatDuration(info.duration),
         thumbnail: info.thumbnail || (info.thumbnails && info.thumbnails.length > 0 ? info.thumbnails[info.thumbnails.length - 1].url : null),
         viewCount: info.view_count || null,
-        webpageUrl: info.webpage_url || url,
+        webpageUrl: info.webpage_url || cleanUrl,
         extractor: info.extractor_key || info.extractor || 'WebMedia',
         availableResolutions: sortedResolutions
       };
     } catch (err) {
-      console.error('[Downloader] parseInfo 失敗:', err.message);
-      throw new Error(`無法解析此網址：${err.stderr || err.message || '請確認連結有效且影片公開'}`);
+      console.error('[Downloader] 格式化解析資料失敗:', err.message);
+      throw new Error(`無法讀取影音資訊：${err.message}`);
     }
   }
 
@@ -139,7 +164,11 @@ class DownloaderService {
       '--no-playlist',
       '--newline',
       '--no-warnings',
-      '--extractor-args', 'youtube:player_client=web,default',
+      '--no-check-certificates',
+      '--geo-bypass',
+      '--extractor-args', 'youtube:player_client=android_vr,android,ios,web,default',
+      '--socket-timeout', '30',
+      '--concurrent-fragments', '4',
       '-o', outputTemplate
     ];
 

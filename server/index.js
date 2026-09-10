@@ -255,6 +255,46 @@ app.get('/api/download/file/:filename', (req, res) => {
   res.sendFile(filePath);
 });
 
+// 6.9 取得公開可兌換與測試金鑰清單
+app.get('/api/vip/available-keys', (req, res) => {
+  const vip = checkVipStatus(req);
+  const sampleKeys = [
+    {
+      key: '0815065',
+      name: '⚡ 總控派發管理專用金鑰',
+      desc: '最高級管理員：可開啟派發金鑰控制台 (1天/1週/1個月/永久)、即時停用開關、永久無限制下載',
+      tag: '總控管理員 (測試)',
+      isMaster: true
+    },
+    {
+      key: 'RPJG-VIP-LIFETIME',
+      name: '👑 RPJG VIP 永久尊爵卡',
+      desc: '永久 VIP 權限：每日下載無限次數、最高 4K 畫質與 320k 極致音質',
+      tag: '永久尊爵 VIP',
+      isMaster: false
+    },
+    {
+      key: '065R.P.J.G',
+      name: '🛡️ RPJG 最高級總控核心金鑰',
+      desc: '系統創辦人專用核心金鑰：具備完整總控特權',
+      tag: '核心總控',
+      isMaster: true
+    }
+  ];
+
+  // 若使用者已為管理員，額外列出金鑰庫內所有金鑰
+  let activeKeys = [];
+  if (vip.isMaster) {
+    activeKeys = keyManager.listKeys();
+  }
+
+  res.json({
+    success: true,
+    sampleKeys,
+    activeKeys
+  });
+});
+
 // 7. 兌換 VIP 啟用金鑰
 app.post('/api/vip/redeem', (req, res) => {
   const { key } = req.body;

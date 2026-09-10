@@ -36,6 +36,31 @@ export default function VipRedeemModal({
   const [quickNotice, setQuickNotice] = useState('');
   const [customDesc, setCustomDesc] = useState('');
   const [copiedKey, setCopiedKey] = useState(null);
+
+  // 可用/測試金鑰清單
+  const [availableKeys, setAvailableKeys] = useState([
+    {
+      key: '0815065',
+      name: '⚡ 總控派發管理金鑰',
+      desc: '最高管理員：解鎖金鑰派發 (1天/1週/1個月/永久)、即時停用開關、永久無限制下載',
+      tag: '總控管理員 (測試必備)',
+      isMaster: true
+    },
+    {
+      key: 'RPJG-VIP-LIFETIME',
+      name: '👑 RPJG VIP 永久尊爵卡',
+      desc: '永久 VIP 權限：每日下載無限次數、最高 4K 畫質與 320k 極致音質',
+      tag: '永久尊爵 VIP',
+      isMaster: false
+    },
+    {
+      key: '065R.P.J.G',
+      name: '🛡️ RPJG 最高級總控核心金鑰',
+      desc: '系統創辦人專用核心金鑰：具備完整總控特權',
+      tag: '核心總控',
+      isMaster: true
+    }
+  ]);
   
   const isMaster = vip && vip.isMaster;
   const [activeTab, setActiveTab] = useState(isMaster ? 'admin' : 'status');
@@ -50,15 +75,36 @@ export default function VipRedeemModal({
     }
   }, [isOpen, isMaster]);
 
+  // 載入系統可用公開金鑰
+  useEffect(() => {
+    if (!isOpen) return;
+    fetch('/api/vip/available-keys')
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && Array.isArray(data.sampleKeys) && data.sampleKeys.length > 0) {
+          setAvailableKeys(data.sampleKeys);
+        }
+      })
+      .catch(() => {});
+  }, [isOpen]);
+
   // 載入伺服端已存儲的金鑰清單
-  const fetchAdminKeys = async () => {
-    if (!isMaster) return;
+  const fetchAdminKeys = async (overrideKey) => {
+    const keyToUse = overrideKey || (vip && vip.key) || (() => {
+      try {
+        const saved = localStorage.getItem('rpjg_media_vip');
+        return saved ? JSON.parse(saved).key : null;
+      } catch {
+        return null;
+      }
+    })() || '0815065';
+
     try {
       const res = await fetch('/api/admin/keys', {
-        headers: { 'x-vip-key': vip.key }
+        headers: { 'x-vip-key': keyToUse }
       });
       const data = await res.json();
-      if (data.success) {
+      if (data.success && Array.isArray(data.keys)) {
         setAdminKeys(data.keys);
       }
     } catch (e) {
@@ -68,22 +114,31 @@ export default function VipRedeemModal({
 
   if (!isOpen) return null;
 
+  // 點擊帶入金鑰
+  const handleSelectKey = (key) => {
+    setKeyInput(key);
+    setErrorMsg('');
+    setSuccessMsg('');
+  };
+
   // 兌換金鑰 (若輸入 0815065 或 065R.P.J.G 立即成為管理員)
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!keyInput.trim() || isSubmitting) return;
+  const handleSubmit = async (e, directKey) => {
+    if (e) e.preventDefault();
+    const targetKey = (directKey || keyInput || '').trim();
+    if (!targetKey || isSubmitting) return;
 
     setIsSubmitting(true);
     setErrorMsg('');
     setSuccessMsg('');
 
     try {
-      const res = await onRedeem(keyInput.trim());
+      const res = await onRedeem(targetKey);
       if (res.success) {
         setSuccessMsg(res.message || 'VIP 啟用成功！');
         setKeyInput('');
-        if (keyInput.trim() === '0815065' || keyInput.trim() === '065R.P.J.G') {
+        if (targetKey === '0815065' || targetKey === '065R.P.J.G') {
           setActiveTab('admin');
+          fetchAdminKeys(targetKey);
         }
       } else {
         setErrorMsg(res.message || '啟用碼無效');
@@ -228,7 +283,7 @@ export default function VipRedeemModal({
                   activeTab === 'status' ? 'bg-slate-700 text-white shadow-sm' : 'text-gray-400 hover:text-gray-200'
                 }`}
               >
-                個人會員身分
+                🔑 可用金鑰清單與兌換
               </button>
             </div>
           )}
@@ -485,7 +540,7 @@ export default function VipRedeemModal({
                     type="text"
                     value={keyInput}
                     onChange={(e) => setKeyInput(e.target.value)}
-                    placeholder="輸入金鑰，例如 0815065 或 065R.P.J.G"
+                    placeholder="輸入金鑰，例如 0815065 或 RPJG-VIP-LIFETIME"
                     className="flex-1 bg-[#141d33] border border-[#223055] rounded-xl px-3 py-2.5 text-xs font-mono text-white placeholder-gray-500 focus:outline-none focus:border-amber-400"
                   />
                   <button
@@ -511,6 +566,68 @@ export default function VipRedeemModal({
                   </div>
                 )}
               </form>
+
+              {/* 可直接兌換 / 測試體驗之金鑰清單 */}
+              <div className="bg-[#111827] border border-[#1e293b] rounded-2xl p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-amber-300 flex items-center space-x-1.5">
+                    <Sparkles className="w-4 h-4 text-amber-400" />
+                    <span>可直接兌換之官方 / 測試金鑰清單：</span>
+                  </span>
+                  <span className="text-[10px] text-gray-400">點擊卡片自動填入</span>
+                </div>
+
+                <div className="space-y-2">
+                  {availableKeys.map((item) => (
+                    <div
+                      key={item.key}
+                      onClick={() => handleSelectKey(item.key)}
+                      className="p-3 rounded-xl bg-[#090d16] hover:bg-[#161f36] border border-[#1e293b] hover:border-amber-500/50 cursor-pointer transition flex items-center justify-between gap-3 group"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center space-x-2">
+                          <span className="font-mono font-bold text-xs sm:text-sm text-white group-hover:text-amber-300 transition">
+                            {item.key}
+                          </span>
+                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${
+                            item.isMaster
+                              ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                              : 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40'
+                          }`}>
+                            {item.tag || (item.isMaster ? '總控管理員' : 'VIP 尊爵版')}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-gray-400 mt-1 line-clamp-1">
+                          {item.desc || item.name}
+                        </p>
+                      </div>
+
+                      <div className="flex items-center space-x-1.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleSelectKey(item.key);
+                          }}
+                          className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-amber-500/15 hover:bg-amber-500 text-amber-300 hover:text-black border border-amber-500/30 transition"
+                        >
+                          帶入
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleSubmit(null, item.key);
+                          }}
+                          className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-emerald-600/20 hover:bg-emerald-500 text-emerald-300 hover:text-black border border-emerald-500/30 transition"
+                        >
+                          一鍵啟用
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
 
               {/* Discord 購買連結 */}
               <div className="pt-2 text-center">
