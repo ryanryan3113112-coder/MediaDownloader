@@ -4,7 +4,7 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
-import { downloaderService } from './downloader.js';
+import { downloaderService, getCookiesArgs } from './downloader.js';
 import { quotaManager } from './quotaManager.js';
 import { keyManager } from './keyManager.js';
 
