@@ -9,9 +9,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# 下載最新版 yt-dlp 獨立二進位檔至系統路徑
-RUN curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp \
-    && chmod a+rx /usr/local/bin/yt-dlp
+# 下載最新版 yt-dlp 獨立二進位檔至系統路徑並覆蓋所有路徑
+RUN curl -fsSL https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp \
+    && chmod a+rx /usr/local/bin/yt-dlp \
+    && ln -sf /usr/local/bin/yt-dlp /usr/bin/yt-dlp \
+    && /usr/local/bin/yt-dlp -U || true
 
 # 設定環境變數與快取目錄，供 yt-dlp 與元件儲存
 ENV XDG_CACHE_HOME=/tmp/.cache

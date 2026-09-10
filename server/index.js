@@ -402,6 +402,68 @@ app.post('/api/admin/reset-quota', (req, res) => {
   res.json({ success: true, message: `已重置 [${identifier}] 的每日配額` });
 });
 
+// 10.5 診斷與遠端熱升級 yt-dlp
+app.get('/api/debug/ytdlp', async (req, res) => {
+  try {
+    const { exec } = await import('child_process');
+    const { promisify } = await import('util');
+    const execAsync = promisify(exec);
+
+    let whichYt = 'unknown';
+    let ytVer = 'unknown';
+    let updateLog = '';
+    let testParse = '';
+
+    try {
+      const { stdout } = await execAsync('which yt-dlp || where yt-dlp');
+      whichYt = stdout.trim();
+    } catch (e) {
+      whichYt = e.message;
+    }
+
+    try {
+      const { stdout } = await execAsync('yt-dlp --version');
+      ytVer = stdout.trim();
+    } catch (e) {
+      ytVer = e.message;
+    }
+
+    try {
+      const { stdout, stderr } = await execAsync('yt-dlp -U');
+      updateLog = (stdout + '\n' + stderr).trim();
+    } catch (e) {
+      updateLog = e.message;
+    }
+
+    // 重新檢查更新後的版本
+    let newVer = ytVer;
+    try {
+      const { stdout } = await execAsync('yt-dlp --version');
+      newVer = stdout.trim();
+    } catch (_) {}
+
+    // 測試解析
+    try {
+      const { stdout } = await execAsync('yt-dlp --dump-json --no-playlist --skip-download --extractor-args "youtube:player_client=android_vr,ios,mweb,android" --socket-timeout 20 "https://www.youtube.com/watch?v=uLU6GE88vvU"');
+      const j = JSON.parse(stdout);
+      testParse = `SUCCESS: ${j.title} (${j.formats?.length || 0} formats, max: ${j.height}p)`;
+    } catch (e) {
+      testParse = `FAIL: ${e.stderr || e.stdout || e.message}`;
+    }
+
+    res.json({
+      success: true,
+      path: whichYt,
+      initialVersion: ytVer,
+      newVersion: newVer,
+      updateLog,
+      testParse
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // 11. 前端靜態檔案服務 (Production mode)
 if (fs.existsSync(DIST_DIR)) {
   app.use(express.static(DIST_DIR));
