@@ -1,0 +1,39 @@
+[
+  {
+    "key": "065R.P.J.G",
+    "description": "RPJG 最高級總控管理員專用核心金鑰 (永久無限制)",
+    "tier": "MASTER_ADMIN",
+    "maxUses": null,
+    "usedCount": 2,
+    "expiresAt": null,
+    "createdAt": "2026-09-10T11:31:46.141Z"
+  },
+  {
+    "key": "RPJG-VIP-LIFETIME",
+    "description": "RPJG Discord VIP 永久尊爵卡",
+    "tier": "VIP_LIFETIME",
+    "maxUses": 100,
+    "usedCount": 0,
+    "expiresAt": null,
+    "createdAt": "2026-09-10T11:31:46.141Z"
+  },
+  {
+    "key": "RPJG-VIP-PRO-2026",
+    "description": "RPJG 2026 年度旗艦會員",
+    "tier": "VIP_YEARLY",
+    "maxUses": 50,
+    "usedCount": 0,
+    "expiresAt": "2026-12-31T23:59:59.000Z",
+    "createdAt": "2026-09-10T11:31:46.141Z"
+  },
+  {
+    "key": "0815065",
+    "description": "RPJG 測試專用體驗金鑰 (無限制極速下載)",
+    "tier": "VIP_BETA",
+    "role": "RPJG 測試體驗官",
+    "maxUses": 99999,
+    "usedCount": 2,
+    "expiresAt": null,
+    "createdAt": "2026-09-10T11:40:00.000Z"
+  }
+]
