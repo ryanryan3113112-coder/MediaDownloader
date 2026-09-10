@@ -5,6 +5,7 @@ import MediaPreview from './components/MediaPreview';
 import DownloadProgress from './components/DownloadProgress';
 import PaywallModal from './components/PaywallModal';
 import VipRedeemModal from './components/VipRedeemModal';
+import LocalClientModal from './components/LocalClientModal';
 import HistoryPanel from './components/HistoryPanel';
 import {
   Sparkles,
@@ -16,7 +17,9 @@ import {
   FileVideo,
   Award,
   AlertTriangle,
-  ExternalLink
+  ExternalLink,
+  Download,
+  Monitor
 } from 'lucide-react';
 
 const DISCORD_URL = 'https://discord.gg/MDrNBbCBXz';
@@ -64,6 +67,25 @@ export default function App() {
   const [isPaywallOpen, setIsPaywallOpen] = useState(false);
   const [isQuotaExceeded, setIsQuotaExceeded] = useState(false);
   const [isVipModalOpen, setIsVipModalOpen] = useState(false);
+  const [isLocalModalOpen, setIsLocalModalOpen] = useState(false);
+
+  // 本地端連線模式 (Hybrid 雙引擎支援)
+  const [isLocalMode, setIsLocalMode] = useState(() => {
+    try {
+      return localStorage.getItem('rpjg_local_mode') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  const apiBase = isLocalMode ? 'http://localhost:3005' : '';
+
+  const toggleLocalMode = (val) => {
+    setIsLocalMode(val);
+    try {
+      localStorage.setItem('rpjg_local_mode', val ? 'true' : 'false');
+    } catch {}
+  };
 
   // 歷史紀錄
   const [history, setHistory] = useState(() => {
@@ -84,7 +106,7 @@ export default function App() {
       if (vip && vip.key) {
         headers['x-vip-key'] = vip.key;
       }
-      const res = await fetch('/api/quota', { headers });
+      const res = await fetch(`${apiBase}/api/quota`, { headers });
       const data = await res.json();
       if (data.success && data.quota) {
         setQuota(data.quota);
@@ -95,7 +117,7 @@ export default function App() {
     } catch (err) {
       console.error('取得配額失敗:', err);
     }
-  }, [clientId, vip?.key]);
+  }, [clientId, vip?.key, apiBase]);
 
   useEffect(() => {
     fetchQuota();
@@ -121,7 +143,7 @@ export default function App() {
     setDownloadProgress(null);
 
     try {
-      const res = await fetch('/api/info', {
+      const res = await fetch(`${apiBase}/api/info`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -169,7 +191,7 @@ export default function App() {
         headers['x-vip-key'] = vip.key;
       }
 
-      const res = await fetch('/api/download', {
+      const res = await fetch(`${apiBase}/api/download`, {
         method: 'POST',
         headers,
         body: JSON.stringify({ url, type, quality, title, clientId })
@@ -208,12 +230,19 @@ export default function App() {
 
   // 4. SSE 串流監聽
   const listenProgressSSE = (taskId, mediaMeta) => {
-    const eventSource = new EventSource(`/api/progress/${taskId}`);
+    const eventSource = new EventSource(`${apiBase}/api/progress/${taskId}`);
 
     eventSource.onmessage = (event) => {
       try {
         const payload = JSON.parse(event.data);
-        setDownloadProgress(payload);
+        const resolvedDlUrl = isLocalMode && payload.downloadUrl && !payload.downloadUrl.startsWith('http')
+          ? `http://localhost:3005${payload.downloadUrl}`
+          : payload.downloadUrl;
+
+        setDownloadProgress({
+          ...payload,
+          downloadUrl: resolvedDlUrl
+        });
 
         if (payload.status === 'completed') {
           eventSource.close();
@@ -225,7 +254,7 @@ export default function App() {
             title: mediaMeta.title,
             type: mediaMeta.type,
             quality: mediaMeta.quality,
-            downloadUrl: payload.downloadUrl,
+            downloadUrl: resolvedDlUrl,
             fileSize: payload.fileSize,
             time: Date.now()
           };
@@ -251,7 +280,7 @@ export default function App() {
   // 5. 兌換 VIP
   const handleRedeemVip = async (key) => {
     try {
-      const res = await fetch('/api/vip/redeem', {
+      const res = await fetch(`${apiBase}/api/vip/redeem`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ key })
@@ -316,11 +345,30 @@ export default function App() {
           setIsPaywallOpen(true);
         }}
         onOpenVipModal={() => setIsVipModalOpen(true)}
+        onOpenLocalModal={() => setIsLocalModalOpen(true)}
+        isLocalMode={isLocalMode}
         discordUrl={DISCORD_URL}
       />
 
       {/* 主要內容區 */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12 relative z-10">
+        {/* 本地端推薦提示橫幅 */}
+        <div className="w-full max-w-4xl mx-auto mb-6 p-3 px-4 rounded-xl bg-slate-900/60 border border-slate-800/80 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-gray-300 shadow-sm">
+          <div className="flex items-center space-x-2">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+            <span>
+              💡 提示：若雲端受到 YouTube 機房限制無法運作，請下載【本地極速端】，在個人電腦享有秒速無限制下載！
+            </span>
+          </div>
+          <button
+            onClick={() => setIsLocalModalOpen(true)}
+            className="shrink-0 text-emerald-400 hover:text-emerald-300 font-semibold underline underline-offset-2 flex items-center space-x-1"
+          >
+            <span>💻 下載本地端</span>
+            <ExternalLink className="w-3 h-3" />
+          </button>
+        </div>
+
         {/* 標題與簡介 */}
         <div className="text-center max-w-3xl mx-auto mb-8 sm:mb-10">
           <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 text-xs font-semibold mb-4">
@@ -345,12 +393,37 @@ export default function App() {
           isLoading={isParsing}
         />
 
-        {/* 解析錯誤提示 */}
+        {/* 解析錯誤提示 + 下載本地端引導 */}
         {parseError && (
-          <div className="w-full max-w-4xl mx-auto mt-4 p-4 rounded-2xl bg-rose-950/40 border border-rose-800/50 text-xs sm:text-sm text-rose-300 flex items-center space-x-3 shadow-lg">
-            <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0" />
-            <div className="flex-1">
-              <span className="font-bold">解析失敗：</span> {parseError}
+          <div className="w-full max-w-4xl mx-auto mt-4 p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-rose-950/60 via-[#0c1222] to-emerald-950/40 border border-rose-800/60 text-xs sm:text-sm text-gray-200 shadow-2xl space-y-3.5">
+            <div className="flex items-start space-x-3">
+              <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
+              <div className="flex-1 space-y-1">
+                <div className="font-bold text-rose-300 text-sm">
+                  解析失敗：{parseError}
+                </div>
+                <div className="text-gray-300 text-xs sm:text-sm leading-relaxed">
+                  ⚡ <strong className="text-amber-300 font-bold">如果雲端無法運作，請下載本地端運行！</strong><br />
+                  YouTube 會對雲端機房 IP 進行嚴格訪問限制（429 錯誤）；下載「RPJG 本地極速端」在您自己電腦上一鍵啟動，享有乾淨家用網路，<strong>0 限制、秒速解析、畫質最高達 4K！</strong>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3 pt-2.5 border-t border-slate-800">
+              <button
+                onClick={() => setIsLocalModalOpen(true)}
+                className="flex items-center space-x-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold bg-emerald-500 hover:bg-emerald-400 text-black transition shadow-lg shadow-emerald-950/50"
+              >
+                <Monitor className="w-4 h-4" />
+                <span>📥 免費下載本地端 (解壓雙擊即用)</span>
+              </button>
+
+              <button
+                onClick={handleParseUrl}
+                className="px-3.5 py-2.5 rounded-xl text-xs text-gray-300 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 transition"
+              >
+                🔄 重新嘗試雲端解析
+              </button>
             </div>
           </div>
         )}
@@ -445,6 +518,12 @@ export default function App() {
               <ExternalLink className="w-3 h-3" />
             </a>
             <button
+              onClick={() => setIsLocalModalOpen(true)}
+              className="text-emerald-400 hover:text-emerald-300 font-semibold transition flex items-center space-x-1"
+            >
+              <span>💻 下載本地極速端</span>
+            </button>
+            <button
               onClick={() => setIsVipModalOpen(true)}
               className="hover:text-gray-300 transition"
             >
@@ -471,6 +550,14 @@ export default function App() {
         onRedeem={handleRedeemVip}
         onLogoutVip={handleLogoutVip}
         discordUrl={DISCORD_URL}
+      />
+
+      {/* 本地端下載與連線教學彈窗 */}
+      <LocalClientModal
+        isOpen={isLocalModalOpen}
+        onClose={() => setIsLocalModalOpen(false)}
+        isLocalMode={isLocalMode}
+        onToggleLocalMode={toggleLocalMode}
       />
     </div>
   );

@@ -1,11 +1,13 @@
 import React from 'react';
-import { Download, Crown, Sparkles, ExternalLink, ShieldCheck, Clock, CheckCircle2, Zap, KeyRound } from 'lucide-react';
+import { Download, Crown, Sparkles, ExternalLink, ShieldCheck, Clock, CheckCircle2, Zap, KeyRound, Monitor } from 'lucide-react';
 
 export default function Header({
   quota,
   vip,
   onOpenPaywall,
   onOpenVipModal,
+  onOpenLocalModal,
+  isLocalMode,
   discordUrl = 'https://discord.gg/MDrNBbCBXz'
 }) {
   // 格式化剩餘秒數為 hh:mm:ss
@@ -100,6 +102,20 @@ export default function Header({
                 <span>⚡ 派發金鑰</span>
               </button>
             )}
+
+            {/* 本地端下載按鈕 */}
+            <button
+              onClick={onOpenLocalModal}
+              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition shadow-sm ${
+                isLocalMode
+                  ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300 hover:bg-emerald-500/30'
+                  : 'bg-slate-800 hover:bg-slate-700 text-gray-200 border-slate-700 hover:border-slate-600'
+              }`}
+              title="若雲端受限，可下載並運行本地極速端，享受家用網路滿速秒載"
+            >
+              <Monitor className={`w-3.5 h-3.5 ${isLocalMode ? 'text-emerald-400' : 'text-cyan-400'}`} />
+              <span className="hidden sm:inline">{isLocalMode ? '⚡ 本機模式' : '💻 下載本地端'}</span>
+            </button>
 
             {/* VIP 升級 / 兌換按鈕 */}
             {!isVip && (
