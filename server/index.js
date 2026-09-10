@@ -285,21 +285,57 @@ app.post('/api/vip/redeem', (req, res) => {
   });
 });
 
-// 8. 管理員生成金鑰 (需總控代碼授權)
+// 8. 管理員生成金鑰 (需總控代碼授權 065R.P.J.G 或 0815065)
 app.post('/api/admin/keys/generate', (req, res) => {
   const vip = checkVipStatus(req);
   if (!vip.isMaster) {
-    return res.status(403).json({ success: false, message: '需要最高級管理員權限 (065R.P.J.G)' });
+    return res.status(403).json({ success: false, message: '需要最高級總控管理員權限 (0815065 / 065R.P.J.G)' });
   }
 
-  const { tier = 'VIP_MONTHLY', days = 30, description } = req.body;
-  const newKey = keyManager.generateKey({ tier, days, description });
+  const { days = 30, description } = req.body;
+  const newKey = keyManager.generateKey({ days: parseInt(days, 10), description });
 
   res.json({
     success: true,
-    message: '新金鑰建立成功',
+    message: '新金鑰派發成功',
     key: newKey
   });
+});
+
+// 8.1 管理員切換金鑰啟用 / 停用
+app.post('/api/admin/keys/toggle', (req, res) => {
+  const vip = checkVipStatus(req);
+  if (!vip.isMaster) {
+    return res.status(403).json({ success: false, message: '需要最高級總控管理員權限' });
+  }
+
+  const { key } = req.body;
+  const result = keyManager.toggleDisableKey(key);
+  if (!result.success) {
+    return res.status(400).json(result);
+  }
+
+  res.json({
+    success: true,
+    message: result.disabled ? `已成功停用金鑰 [${result.key}]` : `已重新啟用金鑰 [${result.key}]`,
+    ...result
+  });
+});
+
+// 8.2 管理員刪除金鑰
+app.post('/api/admin/keys/delete', (req, res) => {
+  const vip = checkVipStatus(req);
+  if (!vip.isMaster) {
+    return res.status(403).json({ success: false, message: '需要最高級總控管理員權限' });
+  }
+
+  const { key } = req.body;
+  const result = keyManager.deleteKey(key);
+  if (!result.success) {
+    return res.status(400).json(result);
+  }
+
+  res.json(result);
 });
 
 // 9. 管理員列出所有金鑰清單

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Download, Crown, Sparkles, ExternalLink, ShieldCheck, Clock, CheckCircle2, Zap } from 'lucide-react';
+import { Download, Crown, Sparkles, ExternalLink, ShieldCheck, Clock, CheckCircle2, Zap, KeyRound } from 'lucide-react';
 
 export default function Header({
   quota,
@@ -18,6 +18,7 @@ export default function Header({
   };
 
   const isVip = vip && vip.isVip;
+  const isMaster = vip && vip.isMaster;
   const remaining = quota ? quota.remainingToday : 1;
   const isUsedUp = !isVip && remaining === 0;
 
@@ -55,7 +56,7 @@ export default function Header({
                 title="點擊查看 VIP 會員資訊"
               >
                 <Crown className="w-3.5 h-3.5 text-amber-400" />
-                <span className="hidden md:inline">{vip.isMaster ? '總控管理員' : 'VIP 尊爵版'}</span>
+                <span className="hidden md:inline">{isMaster ? '總控管理員' : 'VIP 尊爵版'}</span>
                 <span className="px-1.5 py-0.2 rounded text-[10px] bg-amber-500/20 text-amber-300">
                   無限下載
                 </span>
@@ -86,6 +87,18 @@ export default function Header({
                   </span>
                 )}
               </div>
+            )}
+
+            {/* 總控管理員專屬特殊按鈕：派發金鑰總控 */}
+            {isMaster && (
+              <button
+                onClick={onOpenVipModal}
+                className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-500 hover:bg-amber-400 text-black transition shadow-sm"
+                title="點擊開啟金鑰派發與管理面板"
+              >
+                <KeyRound className="w-3.5 h-3.5 text-black" />
+                <span>⚡ 派發金鑰</span>
+              </button>
             )}
 
             {/* VIP 升級 / 兌換按鈕 */}

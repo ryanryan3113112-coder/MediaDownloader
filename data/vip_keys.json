@@ -1,5 +1,38 @@
 [
   {
+    "key": "RPJG-MONTH-FAA634",
+    "description": "Discord 顧客測試 - 1個月卡",
+    "tier": "VIP_MONTHLY",
+    "role": "RPJG VIP (30天)",
+    "maxUses": 1,
+    "usedCount": 0,
+    "disabled": false,
+    "expiresAt": "2026-10-10T12:02:18.643Z",
+    "createdAt": "2026-09-10T12:02:18.643Z"
+  },
+  {
+    "key": "RPJG-WEEK-955585",
+    "description": "Discord 顧客測試 - 1週卡",
+    "tier": "VIP_WEEKLY",
+    "role": "RPJG VIP (1週)",
+    "maxUses": 1,
+    "usedCount": 0,
+    "disabled": false,
+    "expiresAt": "2026-09-17T12:02:18.636Z",
+    "createdAt": "2026-09-10T12:02:18.636Z"
+  },
+  {
+    "key": "RPJG-1DAY-F47842",
+    "description": "Discord 顧客測試 - 1天卡",
+    "tier": "VIP_DAILY",
+    "role": "RPJG VIP (1天)",
+    "maxUses": 1,
+    "usedCount": 0,
+    "disabled": false,
+    "expiresAt": "2026-09-11T12:02:18.631Z",
+    "createdAt": "2026-09-10T12:02:18.631Z"
+  },
+  {
     "key": "065R.P.J.G",
     "description": "RPJG 最高級總控管理員專用核心金鑰 (永久無限制)",
     "tier": "MASTER_ADMIN",
@@ -32,7 +65,7 @@
     "tier": "VIP_BETA",
     "role": "RPJG 測試體驗官",
     "maxUses": 99999,
-    "usedCount": 2,
+    "usedCount": 3,
     "expiresAt": null,
     "createdAt": "2026-09-10T11:40:00.000Z"
   }
