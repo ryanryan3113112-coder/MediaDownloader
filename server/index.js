@@ -557,6 +557,34 @@ if (fs.existsSync(DIST_DIR)) {
   });
 }
 
+// 自動檢測並補足雲端 Linux 依賴 (Deno JS Runtime 與 curl_cffi TLS 偽裝)
+async function ensureRenderDependencies() {
+  if (process.platform === 'win32') return;
+  try {
+    const { exec } = await import('child_process');
+    const { promisify } = await import('util');
+    const execAsync = promisify(exec);
+
+    // 1. 確保 Deno 存在
+    const home = process.env.HOME || '/root';
+    const denoBin = path.join(home, '.deno/bin');
+    if (!fs.existsSync(path.join(denoBin, 'deno'))) {
+      console.log('[Render Startup] 正在背景安裝 Deno JS Runtime...');
+      await execAsync('curl -fsSL https://deno.land/install.sh | sh').catch(e => console.warn('[Deno Install]', e.message));
+    }
+    if (!process.env.PATH.includes(denoBin)) {
+      process.env.PATH = `${denoBin}:${process.env.PATH}`;
+    }
+
+    // 2. 確保 curl_cffi 存在
+    console.log('[Render Startup] 正在檢查 curl_cffi 偽裝模組...');
+    await execAsync('pip install --no-cache-dir curl_cffi || python3 -m pip install --no-cache-dir curl_cffi').catch(e => console.warn('[curl_cffi Install]', e.message));
+    console.log('[Render Startup] 雲端環境強化完成！');
+  } catch (err) {
+    console.warn('[Render Startup] 環境強化提示:', err.message);
+  }
+}
+
 app.listen(PORT, () => {
   console.log(`\n======================================================`);
   console.log(`🚀 RPJG 影音流體極速下載終端後端核心已啟動`);
@@ -565,4 +593,6 @@ app.listen(PORT, () => {
   console.log(`💎 官方購買與支援 Discord: ${DISCORD_INVITE_URL}`);
   console.log(`👑 總控管理員專用核心金鑰: 065R.P.J.G`);
   console.log(`======================================================\n`);
+
+  ensureRenderDependencies();
 });

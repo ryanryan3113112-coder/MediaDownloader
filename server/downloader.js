@@ -16,6 +16,21 @@ if (!fs.existsSync(DOWNLOADS_DIR)) {
 const DATA_DIR = path.join(__dirname, '../data');
 const COOKIES_FILE = path.join(DATA_DIR, 'cookies.txt');
 
+// 自動擴充 Deno 與環境執行路徑 (保證雲端能順利執行 JS Challenge 解算)
+const homeDir = process.env.HOME || process.env.USERPROFILE || '';
+const possibleDenoPaths = [
+  path.join(homeDir, '.deno', 'bin'),
+  '/opt/render/.deno/bin',
+  '/root/.deno/bin'
+];
+for (const p of possibleDenoPaths) {
+  try {
+    if (fs.existsSync(p) && !process.env.PATH.includes(p)) {
+      process.env.PATH = `${p}:${process.env.PATH}`;
+    }
+  } catch (_) {}
+}
+
 // 檢查或寫入 YouTube Cookies (支援環境變數 YOUTUBE_COOKIES 或 data/cookies.txt 實體檔案)
 export function getCookiesArgs() {
   try {
@@ -26,7 +41,6 @@ export function getCookiesArgs() {
       fs.writeFileSync(COOKIES_FILE, process.env.YOUTUBE_COOKIES.trim(), 'utf-8');
       return [
         '--cookies', COOKIES_FILE,
-        '--js-runtimes', 'node',
         '--remote-components', 'ejs:github'
       ];
     }
@@ -35,7 +49,6 @@ export function getCookiesArgs() {
       if (stat.size > 20) {
         return [
           '--cookies', COOKIES_FILE,
-          '--js-runtimes', 'node',
           '--remote-components', 'ejs:github'
         ];
       }
@@ -110,7 +123,7 @@ class DownloaderService {
     const cookiesArgs = getCookiesArgs();
     let info = null;
 
-    // 優先策略：若具備 Cookies 認證，透過 Node.js EJS 求解器直接秒解
+    // 優先策略：若具備 Cookies 認證，透過 Deno/Node EJS 求解器與瀏覽器偽裝直接秒解
     if (cookiesArgs.length > 0) {
       try {
         info = await runParse([
@@ -120,6 +133,7 @@ class DownloaderService {
           '--no-warnings',
           '--no-check-certificates',
           '--geo-bypass',
+          '--impersonate', 'chrome',
           ...cookiesArgs,
           '--socket-timeout', '30',
           cleanUrl
@@ -139,6 +153,7 @@ class DownloaderService {
           '--no-warnings',
           '--no-check-certificates',
           '--geo-bypass',
+          '--impersonate', 'chrome',
           '--extractor-args', 'youtube:player_client=android_vr,ios,mweb,android',
           '--socket-timeout', '30',
           cleanUrl
@@ -153,6 +168,7 @@ class DownloaderService {
             '--no-warnings',
             '--no-check-certificates',
             '--geo-bypass',
+            '--impersonate', 'chrome',
             '--extractor-args', 'youtube:player_client=web_embedded,tv_embedded,mweb',
             '--socket-timeout', '30',
             cleanUrl
@@ -227,6 +243,7 @@ class DownloaderService {
       '--no-warnings',
       '--no-check-certificates',
       '--geo-bypass',
+      '--impersonate', 'chrome',
       ...cookiesArgs,
       '--socket-timeout', '30',
       '--concurrent-fragments', '4',
