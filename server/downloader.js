@@ -85,7 +85,7 @@ class DownloaderService {
         '--no-warnings',
         '--no-check-certificates',
         '--geo-bypass',
-        '--extractor-args', 'youtube:player_client=android,mweb,tv,ios',
+        '--extractor-args', 'youtube:player_client=android_vr,ios,mweb,android',
         '--socket-timeout', '30',
         cleanUrl
       ]);
@@ -172,7 +172,7 @@ class DownloaderService {
       '--no-warnings',
       '--no-check-certificates',
       '--geo-bypass',
-      '--extractor-args', 'youtube:player_client=android,mweb,tv,ios',
+      '--extractor-args', 'youtube:player_client=android_vr,ios,mweb,android',
       '--socket-timeout', '30',
       '--concurrent-fragments', '4',
       '-o', outputTemplate
