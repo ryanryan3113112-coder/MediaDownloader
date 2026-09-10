@@ -450,11 +450,11 @@ export default function VipRedeemModal({
                     <span>YouTube Cookies 認證防禦（解鎖雲端 429 限制）：</span>
                   </span>
                   <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
-                    cookieStatus?.hasCookie
+                    (cookieStatus?.hasCookie || cookieStatus?.configured)
                       ? 'bg-emerald-950 text-emerald-300 border-emerald-800'
                       : 'bg-rose-950 text-rose-300 border-rose-800'
                   }`}>
-                    {cookieStatus?.hasCookie ? `✅ 已配置生效 (${cookieStatus.size} bytes)` : '⚠️ 尚未配置 (雲端會被 429)'}
+                    {(cookieStatus?.hasCookie || cookieStatus?.configured) ? `✅ 已配置生效 (${cookieStatus.size} bytes)` : '⚠️ 尚未配置 (雲端會被 429)'}
                   </span>
                 </div>
 
@@ -518,8 +518,8 @@ export default function VipRedeemModal({
                   ) : (
                     adminKeys.map((k) => {
                       const isMasterKey = ['065R.P.J.G', '0815065'].includes(k.key);
-                      const isExpired = k.isExpired;
-                      const isDisabled = k.disabled;
+                      const isDisabled = k.disabled || k.enabled === false;
+                      const isExpired = k.isExpired || (k.expiresAt && new Date(k.expiresAt) < new Date());
 
                       return (
                         <div key={k.key} className="p-3 sm:p-3.5 flex items-center justify-between gap-3 text-xs">

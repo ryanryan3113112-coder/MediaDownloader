@@ -7,3 +7,7 @@ downloads/*
 *.cookies.txt
 cookies.txt
 data/cookies.txt
+build/
+*.spec
+__pycache__/
+dist/*.exe

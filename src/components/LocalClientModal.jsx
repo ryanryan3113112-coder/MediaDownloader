@@ -112,41 +112,38 @@ export default function LocalClientModal({
             </div>
           </div>
 
-          {/* 快速使用 3 步驟 */}
+          {/* 單一 EXE 圖形介面特色說明 */}
           <div className="p-4 rounded-xl bg-slate-900/70 border border-slate-800 space-y-3">
             <h4 className="text-xs font-bold text-gray-200 uppercase tracking-wider flex items-center space-x-1.5">
-              <Terminal className="w-4 h-4 text-cyan-400" />
-              <span>超簡單 3 步驟（免複雜安裝）</span>
+              <Sparkles className="w-4 h-4 text-cyan-400" />
+              <span>獨立 EXE 桌面版 • 極致簡單（免安裝、免 Node.js、雙擊即開）</span>
             </h4>
 
             <div className="space-y-2.5 text-xs text-gray-300">
               <div className="flex items-start space-x-2.5">
-                <span className="w-5 h-5 rounded-full bg-cyan-500/20 text-cyan-300 font-bold flex items-center justify-center shrink-0 text-[11px]">
+                <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold flex items-center justify-center shrink-0 text-[11px]">
                   1
                 </span>
                 <div>
-                  <strong className="text-white">下載專案壓縮包：</strong> 點擊下方綠色按鈕直接下載完整程式包 (ZIP)。
+                  <strong className="text-white">點擊按鈕下載 EXE：</strong> 點擊下方綠色按鈕下載單一免安裝執行檔 <code className="px-1.5 py-0.5 rounded bg-slate-800 text-emerald-300 font-mono">RPJG-MediaDownloader.exe</code>。
                 </div>
               </div>
 
               <div className="flex items-start space-x-2.5">
-                <span className="w-5 h-5 rounded-full bg-cyan-500/20 text-cyan-300 font-bold flex items-center justify-center shrink-0 text-[11px]">
+                <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold flex items-center justify-center shrink-0 text-[11px]">
                   2
                 </span>
                 <div>
-                  <strong className="text-white">解壓縮並雙擊啟動：</strong> 解開壓縮包後，在資料夾內直接雙擊 <code className="px-1.5 py-0.5 rounded bg-slate-800 text-amber-300 font-mono">啟動RPJG本地端.bat</code>。
-                  <div className="text-[11px] text-gray-400 mt-0.5">
-                    * 若電腦尚未安裝 Node.js，啟動檔會自動為您開啟官網，下載安裝後即可。
-                  </div>
+                  <strong className="text-white">直接雙擊開啟：</strong> 無需安裝 Node.js、無需執行任何命令提示字元黑窗，雙擊即可彈出原生賽博深色視窗！
                 </div>
               </div>
 
               <div className="flex items-start space-x-2.5">
-                <span className="w-5 h-5 rounded-full bg-cyan-500/20 text-cyan-300 font-bold flex items-center justify-center shrink-0 text-[11px]">
+                <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold flex items-center justify-center shrink-0 text-[11px]">
                   3
                 </span>
                 <div>
-                  <strong className="text-white">自動開啟瀏覽器：</strong> 啟動檔會自動開啟 <code className="px-1.5 py-0.5 rounded bg-slate-800 text-cyan-300 font-mono">http://localhost:3005</code>，隨開即用！
+                  <strong className="text-white">極速轉碼享受：</strong> 內建原生 FFmpeg 轉碼器與 yt-dlp 核心，自動儲存至「下載/RPJG_Downloads」資料夾。
                 </div>
               </div>
             </div>
@@ -155,32 +152,22 @@ export default function LocalClientModal({
           {/* 下載操作按鈕 */}
           <div className="flex flex-col sm:flex-row gap-2.5 pt-1">
             <a
-              href={GITHUB_ZIP_URL}
-              download
-              className="flex-1 flex items-center justify-center space-x-2 px-5 py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-sm transition shadow-lg shadow-emerald-950/50"
+              href="/RPJG-MediaDownloader.exe"
+              download="RPJG-MediaDownloader.exe"
+              className="flex-1 flex items-center justify-center space-x-2 px-5 py-3.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-black font-extrabold text-sm transition shadow-lg shadow-emerald-950/60 transform active:scale-95"
             >
               <Download className="w-4 h-4" />
-              <span>一鍵下載完整程式包 (ZIP)</span>
-            </a>
-
-            <a
-              href="/啟動RPJG本地端.bat"
-              download="啟動RPJG本地端.bat"
-              className="flex items-center justify-center space-x-1.5 px-4 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-emerald-300 text-xs font-semibold border border-slate-700 hover:border-emerald-500/40 transition"
-              title="若您已有原始碼，可單獨下載啟動腳本"
-            >
-              <Terminal className="w-3.5 h-3.5 text-emerald-400" />
-              <span>單獨下載啟動檔 (.bat)</span>
+              <span>📥 免費下載 RPJG-MediaDownloader.exe (Windows 桌面版)</span>
             </a>
 
             <a
               href={GITHUB_REPO_URL}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center justify-center space-x-1.5 px-4 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-gray-200 text-xs font-semibold border border-slate-700 transition"
+              className="flex items-center justify-center space-x-1.5 px-4 py-3.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-gray-200 text-xs font-semibold border border-slate-700 transition"
             >
               <ExternalLink className="w-3.5 h-3.5 text-gray-400" />
-              <span>GitHub</span>
+              <span>GitHub 開源庫</span>
             </a>
           </div>
 

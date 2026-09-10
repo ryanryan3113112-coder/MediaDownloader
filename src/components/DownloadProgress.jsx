@@ -76,7 +76,16 @@ export default function DownloadProgress({ progress, onReset }) {
           <div className="text-xs text-gray-400">
             檔案大小：<span className="font-mono text-emerald-400 font-bold">{formatBytes(progress.fileSize)}</span>
           </div>
-          <div className="flex space-x-3 w-full sm:w-auto">
+          <div className="flex flex-wrap items-center gap-2.5 w-full sm:w-auto">
+            <button
+              type="button"
+              onClick={() => fetch('/api/open-folder', { method: 'POST' }).catch(() => {})}
+              className="flex items-center space-x-1.5 px-4 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 text-xs font-semibold transition"
+              title="直接在 Windows 檔案總管中開啟下載目錄"
+            >
+              <HardDrive className="w-3.5 h-3.5 text-cyan-400" />
+              <span>📂 開啟檔案資料夾</span>
+            </button>
             <a
               href={progress.downloadUrl}
               download

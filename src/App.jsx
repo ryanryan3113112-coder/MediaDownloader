@@ -19,7 +19,8 @@ import {
   AlertTriangle,
   ExternalLink,
   Download,
-  Monitor
+  Monitor,
+  FolderOpen
 } from 'lucide-react';
 
 const DISCORD_URL = 'https://discord.gg/MDrNBbCBXz';
@@ -69,8 +70,14 @@ export default function App() {
   const [isVipModalOpen, setIsVipModalOpen] = useState(false);
   const [isLocalModalOpen, setIsLocalModalOpen] = useState(false);
 
+  // 偵測是否直接在桌面 EXE 或本地環境中運行
+  const isDesktopApp = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+
   // 本地端連線模式 (Hybrid 雙引擎支援)
   const [isLocalMode, setIsLocalMode] = useState(() => {
+    if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+      return true;
+    }
     try {
       return localStorage.getItem('rpjg_local_mode') === 'true';
     } catch {
@@ -78,13 +85,26 @@ export default function App() {
     }
   });
 
-  const apiBase = isLocalMode ? 'http://localhost:3005' : '';
+  // 在桌面 EXE 內運行使用相對路徑，防止動態埠號失效；在雲端且開啟本地端時連線 3005
+  const apiBase = isDesktopApp ? '' : (isLocalMode ? 'http://localhost:3005' : '');
 
   const toggleLocalMode = (val) => {
     setIsLocalMode(val);
     try {
       localStorage.setItem('rpjg_local_mode', val ? 'true' : 'false');
     } catch {}
+  };
+
+  const handleOpenDownloadFolder = async () => {
+    try {
+      const res = await fetch(`${apiBase}/api/open-folder`, { method: 'POST' });
+      const data = await res.json();
+      if (!data.success) {
+        alert('開啟資料夾失敗：' + (data.message || '未知錯誤'));
+      }
+    } catch (err) {
+      console.error('開啟資料夾失敗:', err);
+    }
   };
 
   // 歷史紀錄
@@ -352,22 +372,49 @@ export default function App() {
 
       {/* 主要內容區 */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12 relative z-10">
-        {/* 本地端推薦提示橫幅 */}
-        <div className="w-full max-w-4xl mx-auto mb-6 p-3 px-4 rounded-xl bg-slate-900/60 border border-slate-800/80 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-gray-300 shadow-sm">
-          <div className="flex items-center space-x-2">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
-            <span>
-              💡 提示：若雲端受到 YouTube 機房限制無法運作，請下載【本地極速端】，在個人電腦享有秒速無限制下載！
-            </span>
+        {/* 本地端 / 桌面版狀態橫幅 */}
+        {isDesktopApp ? (
+          <div className="w-full max-w-4xl mx-auto mb-6 p-3.5 px-5 rounded-2xl bg-gradient-to-r from-emerald-950/40 via-slate-900/90 to-cyan-950/40 border border-emerald-500/40 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-gray-200 shadow-xl shadow-emerald-950/20">
+            <div className="flex items-center space-x-3">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shrink-0 shadow-lg shadow-emerald-400/50" />
+              <div>
+                <div className="font-bold text-white flex items-center space-x-2">
+                  <span className="text-emerald-300">⚡ RPJG 影音流體桌面旗艦版已連線</span>
+                  <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-[10px] font-mono border border-emerald-500/30">
+                    EXE 原生獨立引擎
+                  </span>
+                </div>
+                <div className="text-[11px] text-gray-400 mt-0.5">
+                  享有最高優先頻寬與無損轉碼，下載完成將自動存入「下載 / RPJG_Downloads」
+                </div>
+              </div>
+            </div>
+            <button
+              onClick={handleOpenDownloadFolder}
+              className="shrink-0 px-3.5 py-2 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 font-bold flex items-center space-x-1.5 transition shadow-sm"
+              title="在檔案總管中開啟儲存目錄"
+            >
+              <FolderOpen className="w-3.5 h-3.5" />
+              <span>📂 開啟下載資料夾</span>
+            </button>
           </div>
-          <button
-            onClick={() => setIsLocalModalOpen(true)}
-            className="shrink-0 text-emerald-400 hover:text-emerald-300 font-semibold underline underline-offset-2 flex items-center space-x-1"
-          >
-            <span>💻 下載本地端</span>
-            <ExternalLink className="w-3 h-3" />
-          </button>
-        </div>
+        ) : (
+          <div className="w-full max-w-4xl mx-auto mb-6 p-3 px-4 rounded-xl bg-slate-900/60 border border-slate-800/80 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-gray-300 shadow-sm">
+            <div className="flex items-center space-x-2">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+              <span>
+                💡 提示：若雲端受到 YouTube 機房限制無法運作，請下載【獨立桌面 EXE】，免安裝雙擊即可在電腦享有秒速下載！
+              </span>
+            </div>
+            <button
+              onClick={() => setIsLocalModalOpen(true)}
+              className="shrink-0 text-emerald-400 hover:text-emerald-300 font-semibold underline underline-offset-2 flex items-center space-x-1"
+            >
+              <span>💻 下載桌面版 EXE</span>
+              <ExternalLink className="w-3 h-3" />
+            </button>
+          </div>
+        )}
 
         {/* 標題與簡介 */}
         <div className="text-center max-w-3xl mx-auto mb-8 sm:mb-10">
@@ -403,8 +450,8 @@ export default function App() {
                   解析失敗：{parseError}
                 </div>
                 <div className="text-gray-300 text-xs sm:text-sm leading-relaxed">
-                  ⚡ <strong className="text-amber-300 font-bold">如果雲端無法運作，請下載本地端運行！</strong><br />
-                  YouTube 會對雲端機房 IP 進行嚴格訪問限制（429 錯誤）；下載「RPJG 本地極速端」在您自己電腦上一鍵啟動，享有乾淨家用網路，<strong>0 限制、秒速解析、畫質最高達 4K！</strong>
+                  ⚡ <strong className="text-amber-300 font-bold">如果雲端無法運作，請下載獨立 EXE 桌面版！</strong><br />
+                  YouTube 會對雲端機房 IP 進行嚴格訪問限制（429 錯誤）；下載「RPJG 桌面獨立版 EXE」免安裝、免指令，在您自己電腦上雙擊啟動，<strong>0 限制、秒速解析、畫質最高達 4K！</strong>
                 </div>
               </div>
             </div>
@@ -415,7 +462,7 @@ export default function App() {
                 className="flex items-center space-x-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold bg-emerald-500 hover:bg-emerald-400 text-black transition shadow-lg shadow-emerald-950/50"
               >
                 <Monitor className="w-4 h-4" />
-                <span>📥 免費下載本地端 (解壓雙擊即用)</span>
+                <span>📥 免費下載 RPJG 桌面版 EXE (雙擊即用)</span>
               </button>
 
               <button
