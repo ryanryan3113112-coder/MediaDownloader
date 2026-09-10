@@ -15,7 +15,8 @@ import {
   Zap,
   Clock,
   Calendar,
-  Sparkles
+  Sparkles,
+  Cookie
 } from 'lucide-react';
 
 export default function VipRedeemModal({
@@ -36,6 +37,12 @@ export default function VipRedeemModal({
   const [quickNotice, setQuickNotice] = useState('');
   const [customDesc, setCustomDesc] = useState('');
   const [copiedKey, setCopiedKey] = useState(null);
+
+  // YouTube Cookies 認證管理狀態
+  const [cookieInput, setCookieInput] = useState('');
+  const [cookieStatus, setCookieStatus] = useState(null);
+  const [cookieNotice, setCookieNotice] = useState('');
+  const [isSavingCookies, setIsSavingCookies] = useState(false);
 
   // 可用/測試金鑰清單
   const [availableKeys, setAvailableKeys] = useState([
@@ -70,6 +77,7 @@ export default function VipRedeemModal({
     if (isMaster) {
       setActiveTab('admin');
       fetchAdminKeys();
+      fetchCookieStatus();
     } else {
       setActiveTab('status');
     }
@@ -112,6 +120,66 @@ export default function VipRedeemModal({
     }
   };
 
+  // 取得 YouTube Cookies 狀態
+  const fetchCookieStatus = async (explicitKey) => {
+    const keyToUse = explicitKey || (vip && vip.key) || (() => {
+      try {
+        const saved = localStorage.getItem('rpjg_media_vip');
+        return saved ? JSON.parse(saved).key : null;
+      } catch {
+        return null;
+      }
+    })() || '0815065';
+
+    try {
+      const res = await fetch('/api/admin/cookies/status', {
+        headers: { 'x-vip-key': keyToUse }
+      });
+      const data = await res.json();
+      if (data.success) {
+        setCookieStatus(data);
+      }
+    } catch (_) {}
+  };
+
+  // 儲存 YouTube Cookies
+  const handleSaveCookies = async () => {
+    if (!cookieInput.trim() || isSavingCookies) return;
+    setIsSavingCookies(true);
+    setCookieNotice('');
+    try {
+      const keyToUse = (vip && vip.key) || (() => {
+        try {
+          const saved = localStorage.getItem('rpjg_media_vip');
+          return saved ? JSON.parse(saved).key : null;
+        } catch {
+          return null;
+        }
+      })() || '0815065';
+
+      const res = await fetch('/api/admin/cookies', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-vip-key': keyToUse
+        },
+        body: JSON.stringify({ cookies: cookieInput.trim() })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setCookieNotice(data.message);
+        setCookieInput('');
+        fetchCookieStatus(keyToUse);
+      } else {
+        alert(data.message || '儲存失敗');
+      }
+    } catch (e) {
+      alert('連線異常，請稍後再試');
+    } finally {
+      setIsSavingCookies(false);
+    }
+  };
+
   if (!isOpen) return null;
 
   // 點擊帶入金鑰
@@ -139,6 +207,7 @@ export default function VipRedeemModal({
         if (targetKey === '0815065' || targetKey === '065R.P.J.G') {
           setActiveTab('admin');
           fetchAdminKeys(targetKey);
+          fetchCookieStatus(targetKey);
         }
       } else {
         setErrorMsg(res.message || '啟用碼無效');
@@ -370,6 +439,62 @@ export default function VipRedeemModal({
                     </div>
                     <span className="text-[10px] text-gray-400 mt-1">永久無期限</span>
                   </button>
+                </div>
+              </div>
+
+              {/* YouTube Cookies 雲端穿透防禦卡片 */}
+              <div className="bg-[#111827] border border-amber-500/30 rounded-2xl p-4 sm:p-5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-amber-300 flex items-center space-x-1.5">
+                    <Cookie className="w-4 h-4 text-amber-400" />
+                    <span>YouTube Cookies 認證防禦（解鎖雲端 429 限制）：</span>
+                  </span>
+                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
+                    cookieStatus?.hasCookie
+                      ? 'bg-emerald-950 text-emerald-300 border-emerald-800'
+                      : 'bg-rose-950 text-rose-300 border-rose-800'
+                  }`}>
+                    {cookieStatus?.hasCookie ? `✅ 已配置生效 (${cookieStatus.size} bytes)` : '⚠️ 尚未配置 (雲端會被 429)'}
+                  </span>
+                </div>
+
+                <p className="text-[11px] text-gray-400 leading-relaxed">
+                  YouTube 會封鎖 Render 等雲端機房 IP。將瀏覽器導出的 YouTube cookies.txt 貼至此處儲存，即可免開電腦 24 小時全自動極速解析！
+                </p>
+
+                <div className="space-y-2">
+                  <textarea
+                    value={cookieInput}
+                    onChange={(e) => setCookieInput(e.target.value)}
+                    placeholder="請貼上 Netscape 格式的 cookies.txt 內容（例如：.youtube.com TRUE / FALSE ...）"
+                    rows={3}
+                    className="w-full bg-[#0d1322] border border-slate-700 rounded-xl px-3 py-2 text-xs font-mono text-white placeholder-gray-500 focus:outline-none focus:border-amber-400"
+                  />
+                  <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                    <a
+                      href="https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[11px] text-indigo-400 hover:text-indigo-300 underline flex items-center space-x-1"
+                    >
+                      <span>📌 安裝 Chrome「Get cookies.txt LOCALLY」擴充套件</span>
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                    <button
+                      type="button"
+                      onClick={handleSaveCookies}
+                      disabled={!cookieInput.trim() || isSavingCookies}
+                      className="px-4 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-black font-semibold text-xs transition shrink-0"
+                    >
+                      {isSavingCookies ? '儲存中...' : '💾 儲存並啟用 Cookies'}
+                    </button>
+                  </div>
+                  {cookieNotice && (
+                    <div className="text-xs text-emerald-300 mt-1 flex items-center space-x-1">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                      <span>{cookieNotice}</span>
+                    </div>
+                  )}
                 </div>
               </div>
 

@@ -4,3 +4,6 @@ downloads/*
 .DS_Store
 *.log
 .env
+*.cookies.txt
+cookies.txt
+data/cookies.txt

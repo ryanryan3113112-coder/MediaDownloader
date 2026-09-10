@@ -13,6 +13,31 @@ if (!fs.existsSync(DOWNLOADS_DIR)) {
   fs.mkdirSync(DOWNLOADS_DIR, { recursive: true });
 }
 
+const DATA_DIR = path.join(__dirname, '../data');
+const COOKIES_FILE = path.join(DATA_DIR, 'cookies.txt');
+
+// 檢查或寫入 YouTube Cookies (支援環境變數 YOUTUBE_COOKIES 或 data/cookies.txt 實體檔案)
+export function getCookiesArgs() {
+  try {
+    if (process.env.YOUTUBE_COOKIES && process.env.YOUTUBE_COOKIES.trim().length > 20) {
+      if (!fs.existsSync(DATA_DIR)) {
+        fs.mkdirSync(DATA_DIR, { recursive: true });
+      }
+      fs.writeFileSync(COOKIES_FILE, process.env.YOUTUBE_COOKIES.trim(), 'utf-8');
+      return ['--cookies', COOKIES_FILE];
+    }
+    if (fs.existsSync(COOKIES_FILE)) {
+      const stat = fs.statSync(COOKIES_FILE);
+      if (stat.size > 20) {
+        return ['--cookies', COOKIES_FILE];
+      }
+    }
+  } catch (err) {
+    console.error('[Downloader] 檢查 cookies 失敗:', err.message);
+  }
+  return [];
+}
+
 // 格式化秒數為 mm:ss 或 hh:mm:ss
 function formatDuration(seconds) {
   if (!seconds || isNaN(seconds)) return '00:00';
@@ -75,9 +100,10 @@ class DownloaderService {
       return JSON.parse(stdout);
     };
 
+    const cookiesArgs = getCookiesArgs();
     let info = null;
     try {
-      // 策略 1：使用行動端與電視端客戶端（完全排除 datacenter 會被封鎖的 web / default 客戶端）
+      // 策略 1：使用行動端與電視端客戶端 + Cookies 認證
       info = await runParse([
         '--dump-json',
         '--no-playlist',
@@ -85,6 +111,7 @@ class DownloaderService {
         '--no-warnings',
         '--no-check-certificates',
         '--geo-bypass',
+        ...cookiesArgs,
         '--extractor-args', 'youtube:player_client=android_vr,ios,mweb,android',
         '--socket-timeout', '30',
         cleanUrl
@@ -100,6 +127,7 @@ class DownloaderService {
           '--no-warnings',
           '--no-check-certificates',
           '--geo-bypass',
+          ...cookiesArgs,
           '--extractor-args', 'youtube:player_client=web_embedded,tv_embedded,mweb',
           '--socket-timeout', '30',
           cleanUrl
@@ -166,12 +194,14 @@ class DownloaderService {
     const safeBaseName = `${taskId}`;
     const outputTemplate = path.join(DOWNLOADS_DIR, `${safeBaseName}.%(ext)s`);
 
+    const cookiesArgs = getCookiesArgs();
     let ytDlpArgs = [
       '--no-playlist',
       '--newline',
       '--no-warnings',
       '--no-check-certificates',
       '--geo-bypass',
+      ...cookiesArgs,
       '--extractor-args', 'youtube:player_client=android_vr,ios,mweb,android',
       '--socket-timeout', '30',
       '--concurrent-fragments', '4',

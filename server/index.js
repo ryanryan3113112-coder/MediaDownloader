@@ -402,6 +402,69 @@ app.post('/api/admin/reset-quota', (req, res) => {
   res.json({ success: true, message: `已重置 [${identifier}] 的每日配額` });
 });
 
+// 10.1 取得 YouTube Cookies 狀態
+app.get('/api/admin/cookies/status', (req, res) => {
+  const vip = checkVipStatus(req);
+  if (!vip.isMaster) {
+    return res.status(403).json({ success: false, message: '權限不足' });
+  }
+
+  const cookiesFile = path.join(__dirname, '../data/cookies.txt');
+  let hasCookie = false;
+  let size = 0;
+  let mtime = null;
+
+  try {
+    if (fs.existsSync(cookiesFile)) {
+      const stat = fs.statSync(cookiesFile);
+      if (stat.size > 20) {
+        hasCookie = true;
+        size = stat.size;
+        mtime = stat.mtime;
+      }
+    }
+  } catch (_) {}
+
+  res.json({
+    success: true,
+    hasCookie,
+    size,
+    mtime,
+    envCookieConfigured: !!(process.env.YOUTUBE_COOKIES && process.env.YOUTUBE_COOKIES.length > 20)
+  });
+});
+
+// 10.2 上傳/儲存 YouTube Cookies
+app.post('/api/admin/cookies', (req, res) => {
+  const vip = checkVipStatus(req);
+  if (!vip.isMaster) {
+    return res.status(403).json({ success: false, message: '需要最高級總控管理員權限 (0815065)' });
+  }
+
+  const { cookies } = req.body;
+  if (!cookies || typeof cookies !== 'string' || cookies.trim().length < 20) {
+    return res.status(400).json({ success: false, message: '請提供有效的 Netscape 格式 cookies 內容' });
+  }
+
+  try {
+    const dataDir = path.join(__dirname, '../data');
+    if (!fs.existsSync(dataDir)) {
+      fs.mkdirSync(dataDir, { recursive: true });
+    }
+    const cookiesFile = path.join(dataDir, 'cookies.txt');
+    fs.writeFileSync(cookiesFile, cookies.trim(), 'utf-8');
+
+    console.log(`[Admin] 成功儲存 YouTube Cookies (${cookies.trim().length} bytes)`);
+    res.json({
+      success: true,
+      message: `🎉 成功儲存並啟用 YouTube Cookies (${cookies.trim().length} 字元)！雲端 429 限制已即刻解鎖！`
+    });
+  } catch (err) {
+    console.error('[Admin] 儲存 Cookies 失敗:', err);
+    res.status(500).json({ success: false, message: '伺服器寫入 Cookies 失敗：' + err.message });
+  }
+});
+
 // 10.5 診斷與遠端熱升級 yt-dlp
 app.get('/api/debug/ytdlp', async (req, res) => {
   try {
