@@ -34,7 +34,8 @@ function getClientIdentifier(req) {
 function checkVipStatus(req) {
   const authHeader = req.headers['authorization'] || '';
   const token = authHeader.replace(/^Bearer\s+/i, '').trim();
-  const vipKey = req.headers['x-vip-key'] || req.query.vipKey || token;
+  const bodyKey = (req.body && (req.body.vipKey || req.body.secretKey)) ? String(req.body.vipKey || req.body.secretKey).trim() : '';
+  const vipKey = req.headers['x-vip-key'] || req.query.vipKey || bodyKey || token;
   
   if (!vipKey) return { isVip: false };
   const val = keyManager.validateKey(vipKey);

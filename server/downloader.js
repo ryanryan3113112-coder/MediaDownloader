@@ -24,12 +24,20 @@ export function getCookiesArgs() {
         fs.mkdirSync(DATA_DIR, { recursive: true });
       }
       fs.writeFileSync(COOKIES_FILE, process.env.YOUTUBE_COOKIES.trim(), 'utf-8');
-      return ['--cookies', COOKIES_FILE];
+      return [
+        '--cookies', COOKIES_FILE,
+        '--js-runtimes', 'node',
+        '--remote-components', 'ejs:github'
+      ];
     }
     if (fs.existsSync(COOKIES_FILE)) {
       const stat = fs.statSync(COOKIES_FILE);
       if (stat.size > 20) {
-        return ['--cookies', COOKIES_FILE];
+        return [
+          '--cookies', COOKIES_FILE,
+          '--js-runtimes', 'node',
+          '--remote-components', 'ejs:github'
+        ];
       }
     }
   } catch (err) {
@@ -91,7 +99,6 @@ class DownloaderService {
     }
 
     const cleanUrl = url.trim();
-    // 優先策略：採用 Android VR / Android / iOS / Web 多重客戶端，徹底繞過資料中心 IP 攔截
     const runParse = async (args) => {
       const { stdout } = await execFileAsync('yt-dlp', args, {
         timeout: 45000,
@@ -102,24 +109,10 @@ class DownloaderService {
 
     const cookiesArgs = getCookiesArgs();
     let info = null;
-    try {
-      // 策略 1：使用行動端與電視端客戶端 + Cookies 認證
-      info = await runParse([
-        '--dump-json',
-        '--no-playlist',
-        '--skip-download',
-        '--no-warnings',
-        '--no-check-certificates',
-        '--geo-bypass',
-        ...cookiesArgs,
-        '--extractor-args', 'youtube:player_client=android_vr,ios,mweb,android',
-        '--socket-timeout', '30',
-        cleanUrl
-      ]);
-    } catch (primaryErr) {
-      console.warn('[Downloader] 策略 1 解析異常，嘗試策略 2 (內嵌與行動網頁客戶端)...', primaryErr.message);
+
+    // 優先策略：若具備 Cookies 認證，透過 Node.js EJS 求解器直接秒解
+    if (cookiesArgs.length > 0) {
       try {
-        // 策略 2：使用 web_embedded, tv_embedded, mweb 內嵌播放器避開 IP 封鎖
         info = await runParse([
           '--dump-json',
           '--no-playlist',
@@ -128,13 +121,46 @@ class DownloaderService {
           '--no-check-certificates',
           '--geo-bypass',
           ...cookiesArgs,
-          '--extractor-args', 'youtube:player_client=web_embedded,tv_embedded,mweb',
           '--socket-timeout', '30',
           cleanUrl
         ]);
-      } catch (fallbackErr) {
-        console.error('[Downloader] parseInfo 雙重嘗試均失敗:', fallbackErr.message);
-        throw new Error(`無法解析此網址：${fallbackErr.stderr || primaryErr.stderr || fallbackErr.message || '請確認連結有效且影片公開'}`);
+      } catch (cookieErr) {
+        console.warn('[Downloader] Cookies 認證解析遇到異常，轉向行動端客戶端...', cookieErr.message);
+      }
+    }
+
+    // 若未配置 Cookies 或 Cookies 策略失敗，依序嘗試行動端避開 429
+    if (!info) {
+      try {
+        info = await runParse([
+          '--dump-json',
+          '--no-playlist',
+          '--skip-download',
+          '--no-warnings',
+          '--no-check-certificates',
+          '--geo-bypass',
+          '--extractor-args', 'youtube:player_client=android_vr,ios,mweb,android',
+          '--socket-timeout', '30',
+          cleanUrl
+        ]);
+      } catch (primaryErr) {
+        console.warn('[Downloader] 行動端策略 1 解析異常，嘗試策略 2 (內嵌與電視客戶端)...', primaryErr.message);
+        try {
+          info = await runParse([
+            '--dump-json',
+            '--no-playlist',
+            '--skip-download',
+            '--no-warnings',
+            '--no-check-certificates',
+            '--geo-bypass',
+            '--extractor-args', 'youtube:player_client=web_embedded,tv_embedded,mweb',
+            '--socket-timeout', '30',
+            cleanUrl
+          ]);
+        } catch (fallbackErr) {
+          console.error('[Downloader] parseInfo 所有嘗試均失敗:', fallbackErr.message);
+          throw new Error(`無法解析此網址：${fallbackErr.stderr || primaryErr.stderr || fallbackErr.message || '請確認連結有效且影片公開'}`);
+        }
       }
     }
 
@@ -202,11 +228,14 @@ class DownloaderService {
       '--no-check-certificates',
       '--geo-bypass',
       ...cookiesArgs,
-      '--extractor-args', 'youtube:player_client=android_vr,ios,mweb,android',
       '--socket-timeout', '30',
       '--concurrent-fragments', '4',
       '-o', outputTemplate
     ];
+
+    if (cookiesArgs.length === 0) {
+      ytDlpArgs.push('--extractor-args', 'youtube:player_client=android_vr,ios,mweb,android');
+    }
 
     if (type === 'mp3') {
       const q = quality === '128' ? '128K' : quality === '192' ? '192K' : '320K';
