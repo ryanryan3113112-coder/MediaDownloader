@@ -11,3 +11,4 @@ build/
 *.spec
 __pycache__/
 dist/*.exe
+*.exe

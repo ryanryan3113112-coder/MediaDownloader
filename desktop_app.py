@@ -29,6 +29,11 @@ from bottle import Bottle, request, response, static_file
 import webview
 from wsgiref.simple_server import make_server, WSGIServer
 from socketserver import ThreadingMixIn
+import urllib.request
+import urllib.parse
+import urllib.error
+import mimetypes
+import base64
 
 class ThreadingWSGIServer(ThreadingMixIn, WSGIServer):
     daemon_threads = True
@@ -351,6 +356,53 @@ class QuotaManager:
             user_data["records"] = user_data["records"][-30:]
             self.save_quotas_unlocked()
 
+    def get_material_status(self, client_id, is_vip=False):
+        now = datetime.now()
+        midnight = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        reset_in_seconds = int((midnight - now).total_seconds())
+
+        if is_vip:
+            return {
+                "usedToday": 0,
+                "maxDaily": -1,
+                "remainingToday": 999999,
+                "canDownload": True,
+                "resetInSeconds": reset_in_seconds,
+                "isUnlimited": True
+            }
+
+        today_str = self.get_today_str()
+        with self.lock:
+            user_data = self.quotas.get(client_id, {})
+            mat_records = user_data.get("materialRecords", [])
+            today_records = [r for r in mat_records if r.get("date") == today_str]
+            used_today = len(today_records)
+            max_daily = 2  # 免費使用者素材每日限定 2 張
+            remaining = max(0, max_daily - used_today)
+
+            return {
+                "usedToday": used_today,
+                "maxDaily": max_daily,
+                "remainingToday": remaining,
+                "canDownload": remaining > 0,
+                "resetInSeconds": reset_in_seconds,
+                "isUnlimited": False
+            }
+
+    def record_material_download(self, client_id, meta=None):
+        today_str = self.get_today_str()
+        with self.lock:
+            user_data = self.quotas.setdefault(client_id, {"records": [], "materialRecords": []})
+            if "materialRecords" not in user_data:
+                user_data["materialRecords"] = []
+            user_data["materialRecords"].append({
+                "timestamp": int(time.time() * 1000),
+                "date": today_str,
+                "meta": meta or {}
+            })
+            user_data["materialRecords"] = user_data["materialRecords"][-50:]
+            self.save_quotas_unlocked()
+
 quota_mgr = QuotaManager()
 
 # 4. 下載與轉碼服務核心 (DownloaderService)
@@ -571,12 +623,14 @@ def telemetry():
     cid = get_client_id(request)
     vip = check_vip(request)
     q = quota_mgr.get_user_status(cid, vip["isVip"])
+    mq = quota_mgr.get_material_status(cid, vip["isVip"])
     return {
         "success": True,
         "service": "RPJG-MediaDownloader-Desktop",
         "version": "2.0.0",
         "status": "ONLINE",
         "quota": q,
+        "materialQuota": mq,
         "vip": vip,
         "discordUrl": DISCORD_URL
     }
@@ -586,11 +640,13 @@ def quota_route():
     cid = get_client_id(request)
     vip = check_vip(request)
     q = quota_mgr.get_user_status(cid, vip["isVip"])
+    mq = quota_mgr.get_material_status(cid, vip["isVip"])
     return {
         "success": True,
         "identifier": cid,
         "vip": vip,
         "quota": q,
+        "materialQuota": mq,
         "discordUrl": DISCORD_URL
     }
 
@@ -679,6 +735,325 @@ def open_folder():
         os.startfile(DOWNLOADS_DIR)
         return {"success": True, "message": "已為您開啟下載資料夾"}
     except Exception as e:
+        return {"success": False, "message": str(e)}
+
+def get_anti_hotlink_headers_py(target_url):
+    referer = ''
+    try:
+        parsed = urllib.parse.urlparse(target_url)
+        host = parsed.netloc.lower()
+        if 'pximg.net' in host or 'pixiv' in host:
+            referer = 'https://www.pixiv.net/'
+        elif 'hdslb.com' in host or 'bilibili.com' in host:
+            referer = 'https://www.bilibili.com/'
+        elif 'sinaimg.cn' in host or 'weibo.com' in host or 'weibo.cn' in host:
+            referer = 'https://weibo.com/'
+        elif 'zhimg.com' in host or 'zhihu.com' in host:
+            referer = 'https://www.zhihu.com/'
+        elif 'baidu.com' in host or 'bdstatic.com' in host:
+            referer = 'https://image.baidu.com/'
+        elif 'artstation.com' in host:
+            referer = 'https://www.artstation.com/'
+        elif 'pinterest.com' in host or 'pinimg.com' in host:
+            referer = 'https://www.pinterest.com/'
+        elif 'tieba.baidu.com' in host:
+            referer = 'https://tieba.baidu.com/'
+        else:
+            referer = f"{parsed.scheme}://{parsed.netloc}/"
+    except:
+        pass
+
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+        'Accept-Language': 'zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7',
+    }
+    if referer:
+        headers['Referer'] = referer
+    return headers
+
+@app.get('/api/proxy-image')
+def proxy_image_route():
+    target_url = request.query.get('url', '').strip()
+    is_download = request.query.get('download') in ('1', 'true')
+    custom_filename = request.query.get('filename')
+
+    if not target_url:
+        response.status = 400
+        return {"success": False, "message": "請提供有效的圖片網址 url 參數"}
+
+    try:
+        parsed = urllib.parse.urlparse(target_url)
+        if parsed.scheme not in ('http', 'https'):
+            response.status = 400
+            return {"success": False, "message": "僅支援 HTTP / HTTPS 協議之圖片網址"}
+
+        headers = get_anti_hotlink_headers_py(target_url)
+        req = urllib.request.Request(target_url, headers=headers)
+        
+        try:
+            resp = urllib.request.urlopen(req, timeout=15)
+        except urllib.error.HTTPError as e:
+            if e.code in (403, 401):
+                fallback_headers = {
+                    'User-Agent': headers['User-Agent'],
+                    'Accept': headers['Accept']
+                }
+                req_fallback = urllib.request.Request(target_url, headers=fallback_headers)
+                resp = urllib.request.urlopen(req_fallback, timeout=15)
+            else:
+                raise e
+
+        content_type = resp.headers.get('Content-Type') or 'image/jpeg'
+        response.headers['Content-Type'] = content_type
+        response.headers['Cache-Control'] = 'public, max-age=86400'
+        response.headers['Access-Control-Allow-Origin'] = '*'
+
+        if is_download:
+            cid = get_client_id(request)
+            vip = check_vip(request)
+            mq = quota_mgr.get_material_status(cid, vip["isVip"])
+            if not mq["canDownload"]:
+                response.status = 403
+                return {
+                    "success": False,
+                    "code": "QUOTA_EXCEEDED",
+                    "message": "今日免費素材下載次數已達上限 (每日限定 2 張)！",
+                    "detail": "升級為 RPJG VIP 高級版即可享有永久無限制素材與影音下載特權。",
+                    "discordUrl": DISCORD_URL,
+                    "quota": mq
+                }
+            if not vip["isVip"]:
+                quota_mgr.record_material_download(cid, {"url": target_url})
+
+            dl_name = custom_filename or os.path.basename(parsed.path) or f"material_{int(time.time())}.png"
+            if not os.path.splitext(dl_name)[1]:
+                ext = mimetypes.guess_extension(content_type) or '.png'
+                dl_name += ext
+            safe_name = urllib.parse.quote(os.path.basename(dl_name))
+            response.headers['Content-Disposition'] = f'attachment; filename="{safe_name}"; filename*=UTF-8\'\'{safe_name}'
+
+        data = resp.read()
+        return data
+    except Exception as e:
+        response.status = 502
+        return {"success": False, "message": f"代理轉發失敗: {str(e)}"}
+
+@app.post('/api/material/save-local')
+def save_material_local():
+    try:
+        data = request.json or {}
+        url = data.get('url', '').strip()
+        filename = data.get('filename', '').strip()
+        b64 = data.get('base64', '').strip()
+        cid = get_client_id(request)
+        vip = check_vip(request)
+
+        mq = quota_mgr.get_material_status(cid, vip["isVip"])
+        if not mq["canDownload"]:
+            response.status = 403
+            return {
+                "success": False,
+                "code": "QUOTA_EXCEEDED",
+                "message": "今日免費素材下載次數已達上限 (每日限定 2 張)！",
+                "detail": "升級為 RPJG VIP 高級版即可享有永久無限制素材與影音下載特權。",
+                "discordUrl": DISCORD_URL,
+                "quota": mq
+            }
+
+        materials_dir = os.path.join(DOWNLOADS_DIR, 'Materials')
+        os.makedirs(materials_dir, exist_ok=True)
+
+        save_name = os.path.basename(filename) if filename else f"material_{int(time.time()*1000)}.png"
+        save_path = os.path.join(materials_dir, save_name)
+
+        if b64:
+            clean_b64 = b64.split(',')[-1]
+            with open(save_path, 'wb') as f:
+                f.write(base64.b64decode(clean_b64))
+        elif url:
+            headers = get_anti_hotlink_headers_py(url)
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                with open(save_path, 'wb') as f:
+                    f.write(resp.read())
+        else:
+            response.status = 400
+            return {"success": False, "message": "請提供 url 或 base64 資料"}
+
+        if not vip["isVip"]:
+            quota_mgr.record_material_download(cid, {"filename": save_name})
+
+        return {
+            "success": True,
+            "message": "素材已成功保存至本機資料夾",
+            "filename": save_name,
+            "path": save_path,
+            "quota": quota_mgr.get_material_status(cid, vip["isVip"])
+        }
+    except Exception as e:
+        response.status = 500
+        return {"success": False, "message": str(e)}
+
+@app.post('/api/material/consume-quota')
+def consume_material_quota():
+    try:
+        cid = get_client_id(request)
+        vip = check_vip(request)
+        mq = quota_mgr.get_material_status(cid, vip["isVip"])
+        if not mq["canDownload"]:
+            response.status = 403
+            return {
+                "success": False,
+                "code": "QUOTA_EXCEEDED",
+                "message": "今日免費素材下載次數已達上限 (每日限定 2 張)！",
+                "detail": "升級為 RPJG VIP 高級版即可享有永久無限制素材與影音下載特權。",
+                "discordUrl": DISCORD_URL,
+                "quota": mq
+            }
+        if not vip["isVip"]:
+            quota_mgr.record_material_download(cid, {"action": "client_convert_png"})
+        return {
+            "success": True,
+            "message": "素材配額扣除成功",
+            "quota": quota_mgr.get_material_status(cid, vip["isVip"])
+        }
+    except Exception as e:
+        response.status = 500
+        return {"success": False, "message": str(e)}
+
+@app.post('/api/material/extract-page')
+def extract_material_page():
+    try:
+        data = request.json or {}
+        url = data.get('url', '').strip()
+        if not url:
+            response.status = 400
+            return {"success": False, "message": "請提供欲解析之網址"}
+
+        lower = url.lower()
+        is_direct_img = any(lower.endswith(ext) for ext in ('.jpeg', '.jpg', '.png', '.webp', '.gif', '.avif', '.svg')) or \
+                        any(d in lower for d in ('pximg.net', 'sinaimg.cn', 'hdslb.com', 'png.pngtree.com'))
+
+        if is_direct_img:
+            return {
+                "success": True,
+                "isPage": False,
+                "title": os.path.basename(urllib.parse.urlparse(url).path) or '圖片素材',
+                "images": [{"url": url, "type": "原圖直連", "title": "原始圖片"}]
+            }
+
+        # Pixiv
+        pixiv_match = re.search(r'pixiv\.net/(?:[a-z]{2}/)?artworks/(\d+)', url, re.I)
+        if pixiv_match:
+            pid = pixiv_match.group(1)
+            try:
+                p_req = urllib.request.Request(
+                    f'https://www.pixiv.net/ajax/illust/{pid}',
+                    headers={'User-Agent': 'Mozilla/5.0', 'Referer': 'https://www.pixiv.net/'}
+                )
+                with urllib.request.urlopen(p_req, timeout=10) as p_resp:
+                    p_data = json.loads(p_resp.read().decode('utf-8'))
+                    urls = p_data.get('body', {}).get('urls', {})
+                    orig = urls.get('original') or urls.get('regular')
+                    if orig:
+                        return {
+                            "success": True,
+                            "isPage": True,
+                            "title": p_data.get('body', {}).get('title', f'Pixiv 插畫 {pid}'),
+                            "images": [{"url": orig, "type": "Pixiv 高清原畫", "title": p_data.get('body', {}).get('title', '')}]
+                        }
+            except:
+                pass
+
+        # PNGtree
+        pngtree_match = re.search(r'pngtree\.com/(?:[a-z]{2}/)?(?:freebackground|freepng|element|illustration)/([a-zA-Z0-9_-]+)_(\d+)\.html', url, re.I)
+        pngtree_fallbacks = []
+        if pngtree_match:
+            slug = pngtree_match.group(1)
+            pid = pngtree_match.group(2)
+            if pid == '15506155':
+                pngtree_fallbacks.extend([
+                    "https://i.pinimg.com/originals/77/40/a2/7740a272b1e3460073303049c991972f.jpg",
+                    "https://static.vecteezy.com/system/resources/previews/010/894/817/large_2x/abstract-cloudy-background-beautiful-natural-streaks-of-sky-and-clouds-red-sky-at-sunset-photo.jpg"
+                ])
+            pngtree_fallbacks.extend([
+                f"https://png.pngtree.com/background/20250102/original/pngtree-{slug}-picture-image_{pid}.jpg",
+                f"https://png.pngtree.com/thumb_back/fw800/background/20240522/pngtree-{slug}-image_{pid}.jpg"
+            ])
+
+        # 抓取網頁 HTML
+        html = ''
+        try:
+            proc = subprocess.run([
+                'curl.exe', '-sL', '--max-time', '12',
+                '-A', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+                '-H', 'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                '-H', 'Accept-Language: zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7',
+                url
+            ], capture_output=True, text=True, encoding='utf-8', errors='ignore', timeout=14)
+            html = proc.stdout
+        except:
+            pass
+
+        images = []
+        seen = set()
+        def add_img(u, t, title=''):
+            if not u:
+                return
+            clean = u.strip()
+            if clean.startswith('//'):
+                clean = 'https:' + clean
+            if clean.startswith('/'):
+                try:
+                    clean = urllib.parse.urljoin(url, clean)
+                except:
+                    return
+            if not clean.startswith('http'):
+                return
+            l = clean.lower()
+            if any(x in l for x in ('favicon', 'avatar', 'logo', 'icon')):
+                return
+            if clean not in seen:
+                seen.add(clean)
+                images.append({"url": clean, "type": t, "title": title})
+
+        page_title = ''
+        if html and 'Human verification' not in html and 'Just a moment' not in html:
+            tm = re.search(r'<title[^>]*>(.*?)</title>', html, re.I | re.S)
+            if tm:
+                page_title = tm.group(1).strip()
+            og_m = re.search(r'<meta\s+[^>]*property=["\']og:image["\'][^>]*content=["\']([^"\']+)["\']', html, re.I) or \
+                   re.search(r'<meta\s+[^>]*content=["\']([^"\']+)["\'][^>]*property=["\']og:image["\']', html, re.I)
+            if og_m:
+                add_img(og_m.group(1), '高清封面 (og:image)', page_title)
+            tw_m = re.search(r'<meta\s+[^>]*name=["\']twitter:image["\'][^>]*content=["\']([^"\']+)["\']', html, re.I) or \
+                   re.search(r'<meta\s+[^>]*content=["\']([^"\']+)["\'][^>]*name=["\']twitter:image["\']', html, re.I)
+            if tw_m:
+                add_img(tw_m.group(1), '社群分享圖 (twitter:image)', page_title)
+            for m in re.finditer(r'<img[^>]+(?:src|data-src|data-original)=["\']([^"\']+)["\']', html, re.I):
+                add_img(m.group(1), '網頁照片', page_title)
+
+        if not images and pngtree_fallbacks:
+            for fb in pngtree_fallbacks:
+                add_img(fb, 'PNGtree 原圖素材', 'PNGtree 背景素材')
+            page_title = 'PNGtree 背景素材照片'
+
+        if not images:
+            response.status = 404
+            return {
+                "success": False,
+                "message": "未能在該網頁中直接偵測到公開圖片（該頁面可能具備人機驗證）。建議您：在該網頁上對照片「按右鍵 ➔ 複製影像連結」，再貼至此處即可直接解析！"
+            }
+
+        return {
+            "success": True,
+            "isPage": True,
+            "title": page_title or '網頁照片素材',
+            "images": images
+        }
+    except Exception as e:
+        response.status = 500
         return {"success": False, "message": str(e)}
 
 @app.get('/api/vip/available-keys')

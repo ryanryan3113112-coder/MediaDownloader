@@ -116,6 +116,46 @@ class QuotaManager {
     return record;
   }
 
+  // === 素材下載專屬配額 (免費使用者每日限定 2 張，VIP 永久無限制) ===
+  getMaterialStatus(identifier, isVip = false) {
+    const record = this.getRecord(identifier);
+    const maxDaily = isVip ? Infinity : 2; // 免費使用者素材每日限定 2 張
+    const used = record.materialsCount || 0;
+    const remaining = isVip ? 9999 : Math.max(0, maxDaily - used);
+    const secondsRemaining = getSecondsUntilMidnight();
+
+    return {
+      identifier,
+      date: record.date,
+      isVip,
+      usedToday: used,
+      maxDaily: isVip ? 'UNLIMITED' : maxDaily,
+      remainingToday: isVip ? 'UNLIMITED' : remaining,
+      canDownload: isVip || remaining > 0,
+      resetInSeconds: secondsRemaining
+    };
+  }
+
+  canDownloadMaterial(identifier, isVip = false) {
+    if (isVip) return true;
+    const status = this.getMaterialStatus(identifier, false);
+    return status.canDownload;
+  }
+
+  recordMaterialDownload(identifier, info = {}) {
+    const today = getTodayDateStr();
+    const record = this.getRecord(identifier);
+
+    record.date = today;
+    record.materialsCount = (record.materialsCount || 0) + 1;
+    record.lastMaterialAt = new Date().toISOString();
+
+    this.records[identifier] = record;
+    this.save();
+
+    return record;
+  }
+
   // 若發起失敗進行配額退還
   refundQuota(identifier) {
     const record = this.getRecord(identifier);

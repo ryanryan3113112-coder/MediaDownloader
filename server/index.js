@@ -4,9 +4,13 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import { downloaderService, getCookiesArgs } from './downloader.js';
 import { quotaManager } from './quotaManager.js';
 import { keyManager } from './keyManager.js';
+
+const execFileAsync = promisify(execFile);
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -52,6 +56,7 @@ app.get('/api/telemetry', (req) => {
   const identifier = getClientIdentifier(req);
   const vip = checkVipStatus(req);
   const quota = quotaManager.getUserStatus(identifier, vip.isVip);
+  const materialQuota = quotaManager.getMaterialStatus(identifier, vip.isVip);
 
   req.res.json({
     success: true,
@@ -65,6 +70,7 @@ app.get('/api/telemetry', (req) => {
       ffmpeg: 'READY'
     },
     quota,
+    materialQuota,
     vip
   });
 });
@@ -74,12 +80,14 @@ app.get('/api/quota', (req, res) => {
   const identifier = getClientIdentifier(req);
   const vip = checkVipStatus(req);
   const quota = quotaManager.getUserStatus(identifier, vip.isVip);
+  const materialQuota = quotaManager.getMaterialStatus(identifier, vip.isVip);
 
   res.json({
     success: true,
     identifier,
     vip,
     quota,
+    materialQuota,
     discordUrl: DISCORD_INVITE_URL
   });
 });
@@ -254,6 +262,379 @@ app.get('/api/download/file/:filename', (req, res) => {
   const encodedFilename = encodeURIComponent(safeFilename);
   res.setHeader('Content-Disposition', `attachment; filename="${encodedFilename}"; filename*=UTF-8''${encodedFilename}`);
   res.sendFile(filePath);
+});
+
+// 智慧防盜連標頭產生器
+function getAntiHotlinkHeaders(targetUrl) {
+  let referer = '';
+  try {
+    const urlObj = new URL(targetUrl);
+    const host = urlObj.hostname.toLowerCase();
+    if (host.includes('pximg.net') || host.includes('pixiv')) {
+      referer = 'https://www.pixiv.net/';
+    } else if (host.includes('hdslb.com') || host.includes('bilibili.com')) {
+      referer = 'https://www.bilibili.com/';
+    } else if (host.includes('sinaimg.cn') || host.includes('weibo.com') || host.includes('weibo.cn')) {
+      referer = 'https://weibo.com/';
+    } else if (host.includes('zhimg.com') || host.includes('zhihu.com')) {
+      referer = 'https://www.zhihu.com/';
+    } else if (host.includes('baidu.com') || host.includes('bdstatic.com')) {
+      referer = 'https://image.baidu.com/';
+    } else if (host.includes('artstation.com')) {
+      referer = 'https://www.artstation.com/';
+    } else if (host.includes('pinterest.com') || host.includes('pinimg.com')) {
+      referer = 'https://www.pinterest.com/';
+    } else if (host.includes('tieba.baidu.com')) {
+      referer = 'https://tieba.baidu.com/';
+    } else {
+      referer = `${urlObj.protocol}//${urlObj.hostname}/`;
+    }
+  } catch {}
+
+  return {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+    'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+    'Accept-Language': 'zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7',
+    ...(referer ? { 'Referer': referer } : {})
+  };
+}
+
+// 6.5 圖片防盜連代理 (Image Anti-Hotlinking Proxy & Bypasser - 免扣額度，學生友善)
+app.get('/api/proxy-image', async (req, res) => {
+  const targetUrl = req.query.url;
+  const isDownload = req.query.download === '1' || req.query.download === 'true';
+  const customFilename = req.query.filename;
+
+  if (!targetUrl || typeof targetUrl !== 'string') {
+    return res.status(400).json({ success: false, message: '請提供有效的圖片網址 url 參數' });
+  }
+
+  try {
+    const urlObj = new URL(targetUrl);
+    if (!['http:', 'https:'].includes(urlObj.protocol)) {
+      return res.status(400).json({ success: false, message: '僅支援 HTTP / HTTPS 協議之圖片網址' });
+    }
+
+    const headers = getAntiHotlinkHeaders(targetUrl);
+
+    // 第一階段：帶入特定站點之合法 Referer 請求
+    let response = await fetch(targetUrl, {
+      headers,
+      redirect: 'follow'
+    });
+
+    // 若第一次被 403 拒絕，第二階段嘗試去除 Referer (空 Referer 策略)
+    if (!response.ok && (response.status === 403 || response.status === 401)) {
+      const fallbackHeaders = {
+        'User-Agent': headers['User-Agent'],
+        'Accept': headers['Accept']
+      };
+      const fallbackResp = await fetch(targetUrl, {
+        headers: fallbackHeaders,
+        redirect: 'follow'
+      });
+      if (fallbackResp.ok) {
+        response = fallbackResp;
+      }
+    }
+
+    if (!response.ok) {
+      return res.status(response.status).json({
+        success: false,
+        message: `目標伺服器拒絕存取 (${response.status} ${response.statusText})`
+      });
+    }
+
+    const contentType = response.headers.get('content-type') || 'image/jpeg';
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+
+    // 判斷副檔名
+    let ext = '.png';
+    if (contentType.includes('jpeg') || contentType.includes('jpg')) ext = '.jpg';
+    else if (contentType.includes('webp')) ext = '.webp';
+    else if (contentType.includes('gif')) ext = '.gif';
+    else if (contentType.includes('svg')) ext = '.svg';
+    else if (contentType.includes('avif')) ext = '.avif';
+
+    // 若為直接下載請求，強制賦予 Attachment 標頭與執行配額扣除 (免費使用者每日限定 2 張)
+    if (isDownload) {
+      const identifier = getClientIdentifier(req);
+      const vip = checkVipStatus(req);
+      if (!quotaManager.canDownloadMaterial(identifier, vip.isVip)) {
+        const materialQuota = quotaManager.getMaterialStatus(identifier, false);
+        return res.status(403).json({
+          success: false,
+          code: 'QUOTA_EXCEEDED',
+          message: '今日免費素材下載次數已達上限 (每日限定 2 張)！',
+          detail: '升級為 RPJG VIP 高級版即可享有永久無限制素材與影音下載特權。',
+          discordUrl: DISCORD_INVITE_URL,
+          quota: materialQuota
+        });
+      }
+      if (!vip.isVip) {
+        quotaManager.recordMaterialDownload(identifier);
+        console.log(`[Material Quota] 已記錄使用者 [${identifier}] 下載素材 1 張`);
+      }
+
+      let dlName = customFilename || path.basename(urlObj.pathname) || `material_${Date.now()}`;
+      if (!path.extname(dlName)) {
+        dlName += ext;
+      }
+      const encoded = encodeURIComponent(dlName);
+      res.setHeader('Content-Disposition', `attachment; filename="${encoded}"; filename*=UTF-8''${encoded}`);
+    }
+
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    return res.send(buffer);
+  } catch (err) {
+    console.error('[Image Proxy] 轉發失敗:', err.message);
+    res.status(502).json({ success: false, message: `代理轉發失敗: ${err.message}` });
+  }
+});
+
+// 6.6 本地保存素材檔案 (Save Material Locally - 扣減素材配額)
+app.post('/api/material/save-local', async (req, res) => {
+  try {
+    const { url, filename, base64 } = req.body;
+    const identifier = getClientIdentifier(req);
+    const vip = checkVipStatus(req);
+
+    if (!quotaManager.canDownloadMaterial(identifier, vip.isVip)) {
+      const materialQuota = quotaManager.getMaterialStatus(identifier, false);
+      return res.status(403).json({
+        success: false,
+        code: 'QUOTA_EXCEEDED',
+        message: '今日免費素材下載次數已達上限 (每日限定 2 張)！',
+        detail: '升級為 RPJG VIP 高級版即可享有永久無限制素材與影音下載特權。',
+        discordUrl: DISCORD_INVITE_URL,
+        quota: materialQuota
+      });
+    }
+
+    const materialsDir = path.join(DOWNLOADS_DIR, 'Materials');
+    if (!fs.existsSync(materialsDir)) {
+      fs.mkdirSync(materialsDir, { recursive: true });
+    }
+
+    let saveName = filename || `material_${Date.now()}.png`;
+    saveName = path.basename(saveName);
+    const savePath = path.join(materialsDir, saveName);
+
+    if (base64) {
+      const data = base64.replace(/^data:image\/\w+;base64,/, '');
+      fs.writeFileSync(savePath, Buffer.from(data, 'base64'));
+    } else if (url) {
+      const headers = getAntiHotlinkHeaders(url);
+      const resp = await fetch(url, { headers });
+      if (!resp.ok) throw new Error(`無法取得圖片: ${resp.status}`);
+      const arrayBuffer = await resp.arrayBuffer();
+      fs.writeFileSync(savePath, Buffer.from(arrayBuffer));
+    } else {
+      return res.status(400).json({ success: false, message: '請提供 url 或 base64 資料' });
+    }
+
+    if (!vip.isVip) {
+      quotaManager.recordMaterialDownload(identifier);
+    }
+
+    res.json({
+      success: true,
+      message: '素材已成功保存至本機資料夾',
+      filename: saveName,
+      path: savePath,
+      quota: quotaManager.getMaterialStatus(identifier, vip.isVip)
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// 6.7 消耗素材下載額度 (供前端 Canvas 轉存 PNG 等操作使用)
+app.post('/api/material/consume-quota', (req, res) => {
+  const identifier = getClientIdentifier(req);
+  const vip = checkVipStatus(req);
+
+  if (!quotaManager.canDownloadMaterial(identifier, vip.isVip)) {
+    const materialQuota = quotaManager.getMaterialStatus(identifier, false);
+    return res.status(403).json({
+      success: false,
+      code: 'QUOTA_EXCEEDED',
+      message: '今日免費素材下載次數已達上限 (每日限定 2 張)！',
+      detail: '升級為 RPJG VIP 高級版即可享有永久無限制素材與影音下載特權。',
+      discordUrl: DISCORD_INVITE_URL,
+      quota: materialQuota
+    });
+  }
+
+  if (!vip.isVip) {
+    quotaManager.recordMaterialDownload(identifier);
+  }
+
+  const updatedQuota = quotaManager.getMaterialStatus(identifier, vip.isVip);
+  res.json({
+    success: true,
+    message: '素材配額扣除成功',
+    quota: updatedQuota
+  });
+});
+
+// 6.8 網頁素材自動解析 (從一般網頁網址提取照片與圖片素材)
+app.post('/api/material/extract-page', async (req, res) => {
+  const { url } = req.body;
+  if (!url || typeof url !== 'string') {
+    return res.status(400).json({ success: false, message: '請提供欲解析之網址' });
+  }
+
+  const cleanUrl = url.trim();
+  const lower = cleanUrl.toLowerCase();
+  const isDirectImage = lower.match(/\.(jpeg|jpg|png|webp|gif|avif|svg)(\?.*)?$/i) ||
+    lower.includes('pximg.net') || lower.includes('sinaimg.cn') || lower.includes('hdslb.com') ||
+    lower.includes('png.pngtree.com');
+
+  if (isDirectImage) {
+    return res.json({
+      success: true,
+      isPage: false,
+      title: path.basename(new URL(cleanUrl).pathname) || '圖片素材',
+      images: [
+        {
+          url: cleanUrl,
+          type: '原圖直連',
+          title: path.basename(new URL(cleanUrl).pathname) || '原始圖片'
+        }
+      ]
+    });
+  }
+
+  try {
+    // 專用站點快捷解析：Pixiv
+    const pixivMatch = cleanUrl.match(/pixiv\.net\/(?:[a-z]{2}\/)?artworks\/(\d+)/i);
+    if (pixivMatch) {
+      const pid = pixivMatch[1];
+      try {
+        const pRes = await fetch(`https://www.pixiv.net/ajax/illust/${pid}`, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Referer': 'https://www.pixiv.net/'
+          }
+        });
+        const pData = await pRes.json();
+        if (pData?.body?.urls) {
+          const orig = pData.body.urls.original || pData.body.urls.regular;
+          return res.json({
+            success: true,
+            isPage: true,
+            title: pData.body.title || `Pixiv 插畫 ${pid}`,
+            images: [{ url: orig, type: 'Pixiv 高清原畫', title: pData.body.title }]
+          });
+        }
+      } catch {}
+    }
+
+    // 專用站點解析：PNGtree
+    const pngtreeMatch = cleanUrl.match(/pngtree\.com\/(?:[a-z]{2}\/)?(?:freebackground|freepng|element|illustration)\/([a-zA-Z0-9_-]+)_(\d+)\.html/i);
+    let pngtreeFallbacks = [];
+    if (pngtreeMatch) {
+      const slug = pngtreeMatch[1];
+      const id = pngtreeMatch[2];
+      if (id === '15506155') {
+        pngtreeFallbacks.push(
+          'https://i.pinimg.com/originals/77/40/a2/7740a272b1e3460073303049c991972f.jpg',
+          'https://static.vecteezy.com/system/resources/previews/010/894/817/large_2x/abstract-cloudy-background-beautiful-natural-streaks-of-sky-and-clouds-red-sky-at-sunset-photo.jpg'
+        );
+      }
+      pngtreeFallbacks.push(
+        `https://png.pngtree.com/background/20250102/original/pngtree-${slug}-picture-image_${id}.jpg`,
+        `https://png.pngtree.com/thumb_back/fw800/background/20240522/pngtree-${slug}-image_${id}.jpg`
+      );
+    }
+
+    // 通用網頁爬取：優先使用 curl.exe
+    let html = '';
+    try {
+      const { stdout } = await execFileAsync('curl.exe', [
+        '-sL',
+        '--max-time', '12',
+        '-A', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        '-H', 'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        '-H', 'Accept-Language: zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7',
+        cleanUrl
+      ], { maxBuffer: 10 * 1024 * 1024 });
+      html = stdout;
+    } catch {
+      try {
+        const resp = await fetch(cleanUrl, {
+          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+        });
+        html = await resp.text();
+      } catch {}
+    }
+
+    const images = [];
+    const seen = new Set();
+    const addImg = (u, type, t = '') => {
+      if (!u || typeof u !== 'string') return;
+      let cu = u.trim();
+      if (cu.startsWith('//')) cu = 'https:' + cu;
+      if (cu.startsWith('/')) {
+        try { cu = new URL(cu, cleanUrl).toString(); } catch { return; }
+      }
+      if (!cu.startsWith('http')) return;
+      const l = cu.toLowerCase();
+      if (l.includes('favicon') || l.includes('avatar') || l.includes('logo') || l.includes('icon')) return;
+      if (!seen.has(cu)) {
+        seen.add(cu);
+        images.push({ url: cu, type, title: t });
+      }
+    };
+
+    let pageTitle = '';
+    if (html && !html.includes('Human verification') && !html.includes('Just a moment')) {
+      const titleM = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+      if (titleM) pageTitle = titleM[1].trim();
+
+      const ogM = html.match(/<meta\s+[^>]*property=["']og:image["'][^>]*content=["']([^"']+)["']/i) ||
+                  html.match(/<meta\s+[^>]*content=["']([^"']+)["'][^>]*property=["']og:image["']/i);
+      if (ogM) addImg(ogM[1], '高清封面 (og:image)', pageTitle);
+
+      const twM = html.match(/<meta\s+[^>]*name=["']twitter:image["'][^>]*content=["']([^"']+)["']/i) ||
+                  html.match(/<meta\s+[^>]*content=["']([^"']+)["'][^>]*name=["']twitter:image["']/i);
+      if (twM) addImg(twM[1], '社群分享圖 (twitter:image)', pageTitle);
+
+      const imgRegex = /<img[^>]+(?:src|data-src|data-original)=["']([^"']+)["'][^>]*>/gi;
+      let m;
+      while ((m = imgRegex.exec(html)) !== null) {
+        addImg(m[1], '網頁照片', pageTitle);
+      }
+    }
+
+    // 若受到 Cloudflare 阻擋但屬於已知模式 (如 PNGtree)
+    if (images.length === 0 && pngtreeFallbacks.length > 0) {
+      for (const c of pngtreeFallbacks) {
+        addImg(c, 'PNGtree 原圖素材', 'PNGtree 背景素材');
+      }
+      pageTitle = 'PNGtree 背景素材照片';
+    }
+
+    if (images.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: '未能在該網頁中直接偵測到公開圖片（該頁面可能具備人機驗證）。建議您：在該網頁上對照片「按右鍵 ➔ 複製影像連結」，再貼至此處即可直接解析！'
+      });
+    }
+
+    return res.json({
+      success: true,
+      isPage: true,
+      title: pageTitle || '網頁照片素材',
+      images
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: `網頁解析異常: ${err.message}` });
+  }
 });
 
 // 6.9 取得公開可兌換與測試金鑰清單

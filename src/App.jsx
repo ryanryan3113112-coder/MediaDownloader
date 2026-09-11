@@ -7,6 +7,7 @@ import PaywallModal from './components/PaywallModal';
 import VipRedeemModal from './components/VipRedeemModal';
 import LocalClientModal from './components/LocalClientModal';
 import HistoryPanel from './components/HistoryPanel';
+import MaterialHelper from './components/MaterialHelper';
 import {
   Sparkles,
   ShieldCheck,
@@ -36,6 +37,7 @@ function getOrCreateClientId() {
 }
 
 export default function App() {
+  const [activeTab, setActiveTab] = useState('media');
   const [clientId] = useState(getOrCreateClientId);
   const [url, setUrl] = useState('');
   const [isParsing, setIsParsing] = useState(false);
@@ -56,6 +58,15 @@ export default function App() {
     usedToday: 0,
     maxDaily: 1,
     remainingToday: 1,
+    canDownload: true,
+    resetInSeconds: 86400
+  });
+
+  // 素材下載配額狀態 (免費使用者每日限定 2 張)
+  const [materialQuota, setMaterialQuota] = useState({
+    usedToday: 0,
+    maxDaily: 2,
+    remainingToday: 2,
     canDownload: true,
     resetInSeconds: 86400
   });
@@ -128,8 +139,9 @@ export default function App() {
       }
       const res = await fetch(`${apiBase}/api/quota`, { headers });
       const data = await res.json();
-      if (data.success && data.quota) {
-        setQuota(data.quota);
+      if (data.success) {
+        if (data.quota) setQuota(data.quota);
+        if (data.materialQuota) setMaterialQuota(data.materialQuota);
         if (data.vip && data.vip.isVip) {
           setVip(prev => ({ ...prev, ...data.vip }));
         }
@@ -144,6 +156,13 @@ export default function App() {
     // 倒數計時器每秒扣減剩餘時間
     const timer = setInterval(() => {
       setQuota(prev => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          resetInSeconds: Math.max(0, (prev.resetInSeconds || 0) - 1)
+        };
+      });
+      setMaterialQuota(prev => {
         if (!prev) return prev;
         return {
           ...prev,
@@ -360,6 +379,8 @@ export default function App() {
       <Header
         quota={quota}
         vip={vip}
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
         onOpenPaywall={() => {
           setIsQuotaExceeded(!vip.isVip && quota.remainingToday <= 0);
           setIsPaywallOpen(true);
@@ -416,14 +437,30 @@ export default function App() {
           </div>
         )}
 
-        {/* 標題與簡介 */}
-        <div className="text-center max-w-3xl mx-auto mb-8 sm:mb-10">
-          <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 text-xs font-semibold mb-4">
-            <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
-            <span>R.P.J.G 影音實驗室 • 旗艦級多媒體下載引擎</span>
-          </div>
+        {/* 依據 activeTab 決定呈現「素材防盜連助手」或「影音下載」 */}
+        {activeTab === 'material' ? (
+          <MaterialHelper
+            apiBase={apiBase}
+            isDesktopApp={isDesktopApp}
+            clientId={clientId}
+            vip={vip}
+            materialQuota={materialQuota}
+            fetchQuota={fetchQuota}
+            onOpenPaywall={() => {
+              setIsQuotaExceeded(true);
+              setIsPaywallOpen(true);
+            }}
+          />
+        ) : (
+          <>
+            {/* 標題與簡介 */}
+            <div className="text-center max-w-3xl mx-auto mb-8 sm:mb-10">
+              <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 text-xs font-semibold mb-4">
+                <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
+                <span>R.P.J.G 影音實驗室 • 旗艦級多媒體下載引擎</span>
+              </div>
 
-          <h1 className="text-3xl sm:text-5xl font-black text-white tracking-tight leading-tight">
+              <h1 className="text-3xl sm:text-5xl font-black text-white tracking-tight leading-tight">
             高畫質 <span className="bg-clip-text text-transparent bg-gradient-to-r from-cyan-400 via-blue-400 to-indigo-400">MP3 / MP4</span> 一鍵極速下載
           </h1>
 
@@ -543,7 +580,9 @@ export default function App() {
             </div>
           </div>
         </div>
-      </main>
+      </>
+    )}
+  </main>
 
       {/* 頁尾 */}
       <footer className="border-t border-[#1e293b] bg-[#090d16] py-6 text-xs text-gray-500 mt-12">
